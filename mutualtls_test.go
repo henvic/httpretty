@@ -1,1 +1,0 @@
-package httpretty_test
