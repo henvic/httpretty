@@ -24,7 +24,7 @@ func TestSanitize(t *testing.T) {
 	var got = Sanitize(DefaultSanitizers, headers)
 
 	if len(headers) != len(got) {
-		t.Errorf("Expected lenght of sanitized headers (%d) to be equal to length of original headers (%d)", len(got), len(headers))
+		t.Errorf("Expected length of sanitized headers (%d) to be equal to length of original headers (%d)", len(got), len(headers))
 	}
 
 	want := http.Header{

@@ -302,7 +302,7 @@ func (p *printer) printOutgoingClientTLS(config *tls.Config) {
 
 	if cert == nil {
 		// Please notice tls.Config.BuildNameToCertificate() doesn't store the certificate Leaf field.
-		// You need to explictly parse and store it with something such as:
+		// You need to explicitly parse and store it with something such as:
 		// cert.Leaf, err = x509.ParseCertificate(cert.Certificate)
 		p.println(`** unparsed certificate found, skipping`)
 		return
