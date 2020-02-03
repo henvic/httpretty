@@ -3,6 +3,8 @@
 
 Package httpretty prints the HTTP requests of your Go programs pretty on your terminal screen. It is mostly inspired in [curl](https://curl.haxx.se)'s `--verbose` mode, and also on the [httputil.DumpRequest](https://golang.org/pkg/net/http/httputil/) and similar functions.
 
+[![asciicast](https://asciinema.org/a/297429.svg)](https://asciinema.org/a/297429)
+
 ## Setting up a logger
 You can define a logger with something like
 
