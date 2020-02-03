@@ -42,7 +42,7 @@ func readEvalPrint(reader *bufio.Reader, client *http.Client) {
 	s, err := reader.ReadString('\n')
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read stdin: %w\n", err)
+		fmt.Fprintf(os.Stderr, "cannot read stdin: %v\n", err)
 		os.Exit(1)
 	}
 
