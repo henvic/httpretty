@@ -57,7 +57,7 @@ logger.Middleware(mux)
 
 The handler should by a http.Handler. Usually you will want this to be your `http.ServeMux` HTTP entrypoint.
 
-For working examples, please see example/server and example/client.
+For working examples, please see example directory.
 
 ## Filtering
 You have two ways to filter a request so it isn't printed by the logger.
