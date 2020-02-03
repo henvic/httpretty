@@ -49,8 +49,8 @@
 //
 // 	logger.Middleware(handler)
 //
-// Note: server logs doesn't include response headers set by the server.
-// client logs doesn't include request headers set by the HTTP client.
+// Note: server logs don't include response headers set by the server.
+// Client logs don't include request headers set by the HTTP client.
 package httpretty
 
 import (
@@ -68,8 +68,8 @@ import (
 
 // Formatter can be used to format body.
 //
-// If the Format function returns an error, the content is printed in verbatum after a warning.
-// Match receives a mediatype from the Content-Type field. The body is formatted if it returns true.
+// If the Format function returns an error, the content is printed in verbatim after a warning.
+// Match receives a media type from the Content-Type field. The body is formatted if it returns true.
 type Formatter interface {
 	Match(mediatype string) bool
 	Format(dst *bytes.Buffer, src []byte) error
@@ -82,16 +82,16 @@ func WithHide(ctx context.Context) context.Context {
 
 // Logger provides a way for you to print client and server-side information about your HTTP traffic.
 type Logger struct {
-	// SkipRequestInfo can be set to not print a line showing the request URI on all requests.
-	// In addition, when used on the server-side a line containing the remote address is printed too.
+	// SkipRequestInfo avoids printing a line showing the request URI on all requests plus a line
+	// containing the remote address on server-side requests.
 	SkipRequestInfo bool
 
 	// Time the request began and its duration.
 	Time bool
 
-	// TLS information, such as certificate and ciphers.
+	// TLS information, such as certificates and ciphers.
 	// BUG(henvic): Currently, the TLS information prints after the response header, although it
-	// should be printing before the request header.
+	// should be printed before the request header.
 	TLS bool
 
 	// RequestHeader set by the client or received from the server.
@@ -106,10 +106,10 @@ type Logger struct {
 	// ResponseBody received by the client or set by the server.
 	ResponseBody bool
 
-	// SkipSanitize can be set to bypass sanitizing headers containing credentials (such as Authorization).
+	// SkipSanitize bypasses sanitizing headers containing credentials (such as Authorization).
 	SkipSanitize bool
 
-	// Colors sets ANSI escape codes that terminals use to print text in different colors.
+	// Colors set ANSI escape codes that terminals use to print text in different colors.
 	Colors bool
 
 	// Formatters for the request and response bodies.
@@ -317,7 +317,7 @@ func (h httpHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.next.ServeHTTP(rec, req)
 }
 
-// PrintRequest prints a request, even when it is WithHide is used to hide it.
+// PrintRequest prints a request, even when WithHide is used to hide it.
 //
 // It doesn't log TLS connection details or request duration.
 func (l *Logger) PrintRequest(req *http.Request) {
@@ -339,8 +339,8 @@ func (l *Logger) PrintResponse(resp *http.Response) {
 // JSONFormatter helps you read unreadable JSON documents.
 //
 // github.com/tidwall/pretty could be used to add colors to it.
-// However it would add an external dependency. If you want, you can define
-// your own formatter using it or anything else. See Formatter interface.
+// However, it would add an external dependency. If you want, you can define
+// your own formatter using it or anything else. See Formatter.
 type JSONFormatter struct{}
 
 // Match JSON media type.

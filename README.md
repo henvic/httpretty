@@ -31,7 +31,7 @@ client := &http.Client{
 	Transport: logger.RoundTripper(http.DefaultTransport),
 }
 
-// from now on you can use client.Do, client.Get, etc. to create requests.
+// from now on, you can use client.Do, client.Get, etc. to create requests.
 ```
 
 If you don't care about setting a new client, you can safely replace your existing http.DefaultClient with this:
@@ -48,7 +48,7 @@ if _, err := http.Get("https://www.google.com/"); err != nil {
 }
 ```
 
-However, have in mind you usually want to use a custom http Client to control things such as timeout.
+However, have in mind you usually want to use a custom *http.Client to control things such as timeout.
 
 ## Logging on the server-side
 You can use the logger quickly to log requests on your server. For example:
@@ -57,9 +57,9 @@ You can use the logger quickly to log requests on your server. For example:
 logger.Middleware(mux)
 ```
 
-The handler should by a http.Handler. Usually you will want this to be your `http.ServeMux` HTTP entrypoint.
+The handler should by a http.Handler. Usually, you want this to be your `http.ServeMux` HTTP entrypoint.
 
-For working examples, please see example directory.
+For working examples, please see the example directory.
 
 ## Filtering
 You have two ways to filter a request so it isn't printed by the logger.
@@ -95,6 +95,6 @@ logger.SetFilter(func filteredURIs(req *http.Request) (bool, error) {
 ```
 
 ## Formatters
-You can define a formatter for any kind of document by implementing the Formatter interface.
+You can define a formatter for any media type by implementing the Formatter interface.
 
 We provide a JSONFormatter for convenience (it is not enabled by default).
