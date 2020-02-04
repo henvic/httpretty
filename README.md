@@ -82,9 +82,9 @@ and set it as the filter for your logger. For example:
 
 ```go
 logger.SetFilter(func filteredURIs(req *http.Request) (bool, error) {
-  if req.Method != http.MethodGet {
-	  return true, nil
-  }
+	if req.Method != http.MethodGet {
+		return true, nil
+	}
 
 	if path := req.URL.Path; path == "/debug" | strings.HasPrefix(path, "/debug/") {
 		return true, nil
