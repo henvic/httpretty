@@ -851,6 +851,130 @@ func TestIncomingBadJSON(t *testing.T) {
 	}
 }
 
+func TestIncomingFormatterPanicked(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.Formatters = []Formatter{
+		&panickingFormatter{},
+	}
+
+	is := inspect(logger.Middleware(badJSONHandler{}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	go func() {
+		client := newServerClient()
+
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+		req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* body cannot be formatted: panic: evil formatter
+{"bad": }
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestIncomingFormatterMatcherPanicked(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.Formatters = []Formatter{
+		&panickingFormatterMatcher{},
+	}
+
+	is := inspect(logger.Middleware(badJSONHandler{}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	go func() {
+		client := newServerClient()
+
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+		req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* panic while testing body format: evil matcher
+{"bad": }
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 func TestIncomingForm(t *testing.T) {
 	t.Parallel()
 

@@ -456,12 +456,12 @@ func (p *printer) printBodyReader(contentType string, r io.Reader) {
 	}
 
 	for _, f := range p.logger.Formatters {
-		if ok := f.Match(mediatype); !ok {
+		if ok := p.safeBodyMatch(f, mediatype); !ok {
 			continue
 		}
 
 		var formatted bytes.Buffer
-		if err := f.Format(&formatted, body); err != nil {
+		if err := p.safeBodyFormat(f, &formatted, body); err != nil {
 			p.printf("* body cannot be formatted: %v\n%s\n",
 				p.format(color.FgRed, err), string(body))
 			return
@@ -472,6 +472,27 @@ func (p *printer) printBodyReader(contentType string, r io.Reader) {
 	}
 
 	p.println(string(body))
+}
+
+func (p *printer) safeBodyMatch(f Formatter, mediatype string) bool {
+	defer func() {
+		if e := recover(); e != nil {
+			p.printf("* panic while testing body format: %v\n", e)
+		}
+	}()
+
+	return f.Match(mediatype)
+}
+
+func (p *printer) safeBodyFormat(f Formatter, dst *bytes.Buffer, src []byte) (err error) {
+	defer func() {
+		// should not return panic as error because we want to try the next formatter
+		if e := recover(); e != nil {
+			err = fmt.Errorf("panic: %v", e)
+		}
+	}()
+
+	return f.Format(dst, src)
 }
 
 func (p *printer) format(s ...interface{}) string {

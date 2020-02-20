@@ -867,6 +867,140 @@ func TestOutgoingBadJSON(t *testing.T) {
 	}
 }
 
+type panickingFormatter struct{}
+
+func (p *panickingFormatter) Match(mediatype string) bool {
+	return true
+}
+
+func (p *panickingFormatter) Format(dst *bytes.Buffer, src []byte) error {
+	panic("evil formatter")
+}
+
+func TestOutgoingFormatterPanicked(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(&badJSONHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.Formatters = []Formatter{
+		&panickingFormatter{},
+	}
+
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	req, err := http.NewRequest(http.MethodGet, uri, nil)
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+
+	_, err = client.Do(req)
+
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+
+	want := fmt.Sprintf(`* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 9
+< Content-Type: application/json; charset=utf-8
+
+* body cannot be formatted: panic: evil formatter
+{"bad": }
+`, uri, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+type panickingFormatterMatcher struct{}
+
+func (p *panickingFormatterMatcher) Match(mediatype string) bool {
+	panic("evil matcher")
+}
+
+func (p *panickingFormatterMatcher) Format(dst *bytes.Buffer, src []byte) error {
+	return nil
+}
+
+func TestOutgoingFormatterMatcherPanicked(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(&badJSONHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.Formatters = []Formatter{
+		&panickingFormatterMatcher{},
+	}
+
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	req, err := http.NewRequest(http.MethodGet, uri, nil)
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+
+	_, err = client.Do(req)
+
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+
+	want := fmt.Sprintf(`* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 9
+< Content-Type: application/json; charset=utf-8
+
+* panic while testing body format: evil matcher
+{"bad": }
+`, uri, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 type formHandler struct{}
 
 func (h formHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
