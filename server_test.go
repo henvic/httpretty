@@ -611,6 +611,69 @@ func TestIncomingBodyFilterSoftError(t *testing.T) {
 	}
 }
 
+func TestIncomingBodyFilterPanicked(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.SetBodyFilter(func(h http.Header) (skip bool, err error) {
+		panic("evil panic")
+	})
+
+	is := inspect(logger.Middleware(jsonHandler{}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	client := newServerClient()
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	go func() {
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+		req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+* panic while filtering body: evil panic
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* panic while filtering body: evil panic
+{"result":"Hello, world!","number":3.14}
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 func TestIncomingWithTimeRequest(t *testing.T) {
 	t.Parallel()
 

@@ -179,6 +179,11 @@ func (p *printer) printResponse(resp *http.Response) {
 
 func (p *printer) checkBodyFiltered(h http.Header) (skip bool, err error) {
 	if f := p.logger.getBodyFilter(); f != nil {
+		defer func() {
+			if e := recover(); e != nil {
+				p.printf("* panic while filtering body: %v\n", e)
+			}
+		}()
 		return f(h)
 	}
 	return false, nil
