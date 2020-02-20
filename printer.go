@@ -213,6 +213,7 @@ func (p *printer) printBodyUnknownLength(contentType string, maxLength int64, r 
 	n, err := shortReader.Read(pb)
 
 	// if the body is empty, return early.
+	// Server requests always return req.Body != nil, but return io.EOF immediately.
 	if n == 0 && err == io.EOF {
 		return
 	}
