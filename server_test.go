@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -436,6 +438,130 @@ func TestIncomingFilter(t *testing.T) {
 				t.Errorf(`expected input to contain "%v", got %v instead`, tc.want, buf.String())
 			}
 		})
+	}
+}
+
+func TestIncomingBodyFilter(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.SetBodyFilter(func(h http.Header) (skip bool, err error) {
+		mediatype, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
+		return mediatype == "application/json", nil
+	})
+
+	is := inspect(logger.Middleware(jsonHandler{}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	client := newServerClient()
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	go func() {
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+		req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestIncomingBodyFilterSoftError(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.SetBodyFilter(func(h http.Header) (skip bool, err error) {
+		// filter anyway, but print soft error saying something went wrong during the filtering.
+		return true, errors.New("incomplete implementation")
+	})
+
+	is := inspect(logger.Middleware(jsonHandler{}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	client := newServerClient()
+
+	uri := fmt.Sprintf("%s/json", ts.URL)
+
+	go func() {
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+		req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+* error on request body filter: incomplete implementation
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* error on response body filter: incomplete implementation
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
 

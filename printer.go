@@ -168,8 +168,25 @@ func (p *printer) printResponse(resp *http.Response) {
 
 }
 
+func (p *printer) checkBodyFiltered(h http.Header) (skip bool, err error) {
+	if f := p.logger.getBodyFilter(); f != nil {
+		return f(h)
+	}
+	return false, nil
+}
+
 func (p *printer) printResponseBodyOut(resp *http.Response) {
 	if resp.ContentLength == 0 {
+		return
+	}
+
+	skip, err := p.checkBodyFiltered(resp.Header)
+
+	if err != nil {
+		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: %v", err))
+	}
+
+	if skip {
 		return
 	}
 
@@ -388,6 +405,16 @@ func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) 
 		return
 	}
 
+	skip, err := p.checkBodyFiltered(rec.Header())
+
+	if err != nil {
+		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: %v", err))
+	}
+
+	if skip {
+		return
+	}
+
 	if p.logger.MaxResponseBody > 0 && rec.size > p.logger.MaxResponseBody {
 		p.printf("* body is too long (%d bytes) to print, skipping (longer than %d bytes)\n", rec.size, p.logger.MaxResponseBody)
 		return
@@ -495,6 +522,16 @@ func (p *printer) printRequestHeader(req *http.Request) {
 func (p *printer) printRequestBody(req *http.Request) {
 	// For client requests, a request with zero content-length and no body is also treated as unknown.
 	if req.Body == nil {
+		return
+	}
+
+	skip, err := p.checkBodyFiltered(req.Header)
+
+	if err != nil {
+		p.printf("* %s\n", p.format(color.FgRed, "error on request body filter: %v", err))
+	}
+
+	if skip {
 		return
 	}
 

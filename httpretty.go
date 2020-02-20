@@ -123,16 +123,26 @@ type Logger struct {
 	// MaxResponseBody the logger can print.
 	MaxResponseBody int64
 
-	mu      sync.Mutex // ensures atomic writes; protects the following fields
-	w       io.Writer
-	filter  Filter
-	flusher Flusher
+	mu         sync.Mutex // ensures atomic writes; protects the following fields
+	w          io.Writer
+	filter     Filter
+	bodyFilter BodyFilter
+	flusher    Flusher
 }
 
 // Filter allows you to skip requests.
 //
 // If an error happens and you want to log it, you can pass a not-null error value.
 type Filter func(req *http.Request) (skip bool, err error)
+
+// BodyFilter allows you to skip printing a HTTP body based on its associated Header.
+//
+// It can be used for omiting HTTP Request and Response bodies.
+// You can filter by checking properties such as Content-Type or Content-Length.
+//
+// On a HTTP server, this function is called even when no body is present due to
+// http.Request always carrying a non-nil value.
+type BodyFilter func(h http.Header) (skip bool, err error)
 
 // Flusher defines how logger prints requests.
 type Flusher int
@@ -157,6 +167,14 @@ func (l *Logger) SetFilter(f Filter) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.filter = f
+}
+
+// SetBodyFilter allows you to set a function to skip printing a body.
+// Pass nil to remove the body filter. This method is concurrency safe.
+func (l *Logger) SetBodyFilter(f BodyFilter) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.bodyFilter = f
 }
 
 // SetOutput sets the output destination for the logger.
@@ -184,6 +202,13 @@ func (l *Logger) getWriter() io.Writer {
 func (l *Logger) getFilter() Filter {
 	l.mu.Lock()
 	f := l.filter
+	defer l.mu.Unlock()
+	return f
+}
+
+func (l *Logger) getBodyFilter() BodyFilter {
+	l.mu.Lock()
+	f := l.bodyFilter
 	defer l.mu.Unlock()
 	return f
 }
