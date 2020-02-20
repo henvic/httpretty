@@ -68,7 +68,7 @@ You have two ways to filter a request so it isn't printed by the logger.
 You can filter any request by setting a request context before the request reaches `httpretty.RoundTripper`:
 
 ```go
-req = req.WithContext(WithHide(ctx))
+req = req.WithContext(httpretty.WithHide(ctx))
 ```
 
 ### Filter function
