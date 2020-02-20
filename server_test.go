@@ -441,6 +441,52 @@ func TestIncomingFilter(t *testing.T) {
 	}
 }
 
+func TestIncomingFilterPanicked(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.SetFilter(func(req *http.Request) (bool, error) {
+		panic("evil panic")
+	})
+
+	is := inspect(logger.Middleware(helloHandler{}), 1)
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	client := newServerClient()
+	_, err := client.Get(ts.URL)
+
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+
+	want := fmt.Sprintf(`* cannot filter request: GET /: panic: evil panic
+* Request to %v/
+* Request from %v
+> GET / HTTP/1.1
+> Host: %v
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+
+Hello, world!
+`, ts.URL, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf(`expected input to contain "%v", got %v instead`, want, got)
+	}
+}
+
 func TestIncomingBodyFilter(t *testing.T) {
 	t.Parallel()
 

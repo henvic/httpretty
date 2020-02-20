@@ -455,6 +455,54 @@ func TestOutgoingFilter(t *testing.T) {
 	}
 }
 
+func TestOutgoingFilterPanicked(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(&helloHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	logger.SetOutput(ioutil.Discard)
+	logger.SetFilter(func(req *http.Request) (bool, error) {
+		panic("evil panic")
+	})
+
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	_, err := client.Get(ts.URL)
+
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+
+	want := fmt.Sprintf(`* cannot filter request: GET %v: panic: evil panic
+* Request to %v
+> GET / HTTP/1.1
+> Host: %v
+
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+`, ts.URL, ts.URL, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf(`expected input to contain "%v", got %v instead`, want, got)
+	}
+}
+
 func TestOutgoingBodyFilter(t *testing.T) {
 	t.Parallel()
 

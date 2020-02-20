@@ -139,7 +139,7 @@ func (p *printer) checkFilter(req *http.Request) (skip bool) {
 		return false
 	}
 
-	ok, err := filter(req)
+	ok, err := safeFilter(filter, req)
 
 	if err != nil {
 		p.printf("* cannot filter request: %s: %s\n", p.format(color.FgBlue, "%s %s", req.Method, req.URL), p.format(color.FgRed, "%v", err))
@@ -147,6 +147,15 @@ func (p *printer) checkFilter(req *http.Request) (skip bool) {
 	}
 
 	return ok
+}
+
+func safeFilter(filter Filter, req *http.Request) (skip bool, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = fmt.Errorf("panic: %v", e)
+		}
+	}()
+	return filter(req)
 }
 
 func (p *printer) printResponse(resp *http.Response) {
