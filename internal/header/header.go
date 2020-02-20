@@ -1,3 +1,4 @@
+// Package header can be used to sanitize HTTP request and response headers.
 package header
 
 import (
