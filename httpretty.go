@@ -162,7 +162,7 @@ const (
 )
 
 // SetFilter allows you to set a function to skip requests.
-// Pass nil to remove all filters. This method is concurrency safe.
+// Pass nil to remove the filter. This method is concurrency safe.
 func (l *Logger) SetFilter(f Filter) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
