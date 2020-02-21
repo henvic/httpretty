@@ -43,6 +43,39 @@ func TestPrintRequest(t *testing.T) {
 	}
 }
 
+func TestPrintRequestWithColors(t *testing.T) {
+	t.Parallel()
+
+	var req, err = http.NewRequest(http.MethodPost, "http://wxww.example.com/", nil)
+
+	if err != nil {
+		panic(err)
+	}
+
+	logger := &Logger{
+		TLS:            true,
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+		Colors:         true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.PrintRequest(req)
+
+	want := `> [34;1mPOST[0m [33m/[0m [34mHTTP/1.1[0m
+> [34;1mHost[0m[31m:[0m [33mwxww.example.com[0m
+
+`
+
+	if got := buf.String(); got != want {
+		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
+	}
+}
+
 func TestPrintRequestFiltered(t *testing.T) {
 	t.Parallel()
 
