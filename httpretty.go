@@ -282,8 +282,11 @@ func (r roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err err
 			}
 		}
 
-		p.printTLSInfo(resp.TLS, false)
-		p.printTLSServer(req.Host, resp.TLS)
+		if l.TLS {
+			p.printTLSInfo(resp.TLS, false)
+			p.printTLSServer(req.Host, resp.TLS)
+		}
+
 		p.printResponse(resp)
 	}()
 

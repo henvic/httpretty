@@ -1605,6 +1605,144 @@ Hello, world!
 	}
 }
 
+func TestIncomingMutualTLSNoSafetyLogging(t *testing.T) {
+	t.Parallel()
+
+	caCert, err := ioutil.ReadFile("testdata/cert.pem")
+
+	if err != nil {
+		panic(err)
+	}
+
+	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
+
+	if err != nil {
+		panic(err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+	caCertPool.AppendCertsFromPEM(clientCert)
+
+	tlsConfig := &tls.Config{
+		ClientCAs:  caCertPool,
+		ClientAuth: tls.RequireAndVerifyClientCert,
+	}
+
+	logger := &Logger{
+		// TLS must be false
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	is := inspect(logger.Middleware(helloHandler{}), 1)
+
+	// NOTE(henvic): Using httptest directly turned out complicated.
+	// See https://venilnoronha.io/a-step-by-step-guide-to-mtls-in-go
+	server := &http.Server{
+		TLSConfig: tlsConfig,
+		Handler:   is,
+	}
+
+	listener, err := netListener()
+
+	if err != nil {
+		panic(fmt.Sprintf("failed to listen on a port: %v", err))
+	}
+
+	defer listener.Close()
+
+	go func() {
+		// Certificate generated with
+		// $ openssl req -newkey rsa:2048 \
+		// -new -nodes -x509 \
+		// -days 36500 \
+		// -out cert.pem \
+		// -keyout key.pem \
+		// -subj "/C=US/ST=California/L=Carmel-by-the-Sea/O=Plifk/OU=Cloud/CN=localhost"
+		if errcp := server.ServeTLS(listener, "testdata/cert.pem", "testdata/key.pem"); errcp != http.ErrServerClosed {
+			t.Errorf("server exit with unexpected error: %v", errcp)
+		}
+	}()
+
+	defer server.Shutdown(context.Background())
+
+	// Certificate generated with
+	// $ openssl req -newkey rsa:2048 \
+	// -new -nodes -x509 \
+	// -days 36500 \
+	// -out cert-client.pem \
+	// -keyout key-client.pem \
+	// -subj "/C=NL/ST=Zuid-Holland/L=Rotterdam/O=Client/OU=User/CN=User"
+	cert, err := tls.LoadX509KeyPair("testdata/cert-client.pem", "testdata/key-client.pem")
+
+	if err != nil {
+		t.Errorf("failed to load X509 key pair: %v", err)
+	}
+
+	cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+
+	if err != nil {
+		t.Errorf("failed to parse certificate for copying Leaf field")
+	}
+
+	// Create a HTTPS client and supply the created CA pool and certificate
+	clientTLSConfig := &tls.Config{
+		RootCAs:      caCertPool,
+		Certificates: []tls.Certificate{cert},
+	}
+
+	clientTLSConfig.BuildNameToCertificate()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+
+	if err != nil {
+		panic(err)
+	}
+
+	host := fmt.Sprintf("https://localhost:%s/mutual-tls-test", port)
+
+	go func() {
+		transport := newTransport()
+		transport.TLSClientConfig = clientTLSConfig
+
+		client := &http.Client{
+			Transport: transport,
+		}
+
+		resp, err := client.Get(host)
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		testBody(t, resp.Body, []byte("Hello, world!"))
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /mutual-tls-test HTTP/2.0
+> Host: localhost:%s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/2.0
+
+< HTTP/2.0 200 OK
+
+Hello, world!
+`, host, is.req.RemoteAddr, port)
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 func newServerClient() *http.Client {
 	return &http.Client{
 		Transport: newTransport(),
