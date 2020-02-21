@@ -66,10 +66,8 @@ func TestPrintRequestWithColors(t *testing.T) {
 
 	logger.PrintRequest(req)
 
-	want := `> [34;1mPOST[0m [33m/[0m [34mHTTP/1.1[0m
-> [34;1mHost[0m[31m:[0m [33mwxww.example.com[0m
-
-`
+	want := "> \x1b[34;1mPOST\x1b[0m \x1b[33m/\x1b[0m \x1b[34mHTTP/1.1\x1b[0m" +
+		"\n> \x1b[34;1mHost\x1b[0m\x1b[31m:\x1b[0m \x1b[33mwxww.example.com\x1b[0m\n\n"
 
 	if got := buf.String(); got != want {
 		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
