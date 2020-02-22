@@ -60,6 +60,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/textproto"
 	"os"
 	"sync"
 
@@ -126,6 +127,7 @@ type Logger struct {
 	mu         sync.Mutex // ensures atomic writes; protects the following fields
 	w          io.Writer
 	filter     Filter
+	skipHeader map[string]struct{}
 	bodyFilter BodyFilter
 	flusher    Flusher
 }
@@ -167,6 +169,18 @@ func (l *Logger) SetFilter(f Filter) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.filter = f
+}
+
+// SkipHeader allows you to skip printing specific headers.
+// This method is concurrency safe.
+func (l *Logger) SkipHeader(headers []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	m := map[string]struct{}{}
+	for _, h := range headers {
+		m[textproto.CanonicalMIMEHeaderKey(h)] = struct{}{}
+	}
+	l.skipHeader = m
 }
 
 // SetBodyFilter allows you to set a function to skip printing a body.
@@ -211,6 +225,19 @@ func (l *Logger) getBodyFilter() BodyFilter {
 	f := l.bodyFilter
 	defer l.mu.Unlock()
 	return f
+}
+
+func (l *Logger) cloneSkipHeader() map[string]struct{} {
+	l.mu.Lock()
+	skipped := l.skipHeader
+	l.mu.Unlock()
+
+	m := map[string]struct{}{}
+	for h := range skipped {
+		m[h] = struct{}{}
+	}
+
+	return m
 }
 
 type contextHide struct{}

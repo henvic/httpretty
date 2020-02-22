@@ -508,8 +508,13 @@ func (p *printer) printHeaders(prefix rune, h http.Header) {
 		h = header.Sanitize(header.DefaultSanitizers, h)
 	}
 
+	skipped := p.logger.cloneSkipHeader()
+
 	for _, key := range sortHeaderKeys(h) {
 		for _, v := range h[key] {
+			if _, skip := skipped[key]; skip {
+				continue
+			}
 			p.printf("%c %s%s %s\n", prefix,
 				p.format(color.FgBlue, color.Bold, key),
 				p.format(color.FgRed, ":"),
