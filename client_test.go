@@ -928,7 +928,7 @@ func (p *panickingFormatter) Match(mediatype string) bool {
 	return true
 }
 
-func (p *panickingFormatter) Format(dst *bytes.Buffer, src []byte) error {
+func (p *panickingFormatter) Format(w io.Writer, src []byte) error {
 	panic("evil formatter")
 }
 
@@ -995,7 +995,7 @@ func (p *panickingFormatterMatcher) Match(mediatype string) bool {
 	panic("evil matcher")
 }
 
-func (p *panickingFormatterMatcher) Format(dst *bytes.Buffer, src []byte) error {
+func (p *panickingFormatterMatcher) Format(w io.Writer, src []byte) error {
 	return nil
 }
 

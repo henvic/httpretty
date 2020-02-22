@@ -461,14 +461,13 @@ func (p *printer) printBodyReader(contentType string, r io.Reader) {
 		}
 
 		var formatted bytes.Buffer
-		if err := p.safeBodyFormat(f, &formatted, body); err != nil {
-			p.printf("* body cannot be formatted: %v\n%s\n",
-				p.format(color.FgRed, err), string(body))
-			return
+		switch err := p.safeBodyFormat(f, &formatted, body); {
+		case err != nil:
+			p.printf("* body cannot be formatted: %v\n%s\n", p.format(color.FgRed, err), string(body))
+		default:
+			p.println(formatted.String())
 		}
-
-		body = formatted.Bytes()
-		break
+		return
 	}
 
 	p.println(string(body))
@@ -484,7 +483,7 @@ func (p *printer) safeBodyMatch(f Formatter, mediatype string) bool {
 	return f.Match(mediatype)
 }
 
-func (p *printer) safeBodyFormat(f Formatter, dst *bytes.Buffer, src []byte) (err error) {
+func (p *printer) safeBodyFormat(f Formatter, w io.Writer, src []byte) (err error) {
 	defer func() {
 		// should not return panic as error because we want to try the next formatter
 		if e := recover(); e != nil {
@@ -492,7 +491,7 @@ func (p *printer) safeBodyFormat(f Formatter, dst *bytes.Buffer, src []byte) (er
 		}
 	}()
 
-	return f.Format(dst, src)
+	return f.Format(w, src)
 }
 
 func (p *printer) format(s ...interface{}) string {

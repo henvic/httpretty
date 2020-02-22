@@ -73,7 +73,7 @@ import (
 // Match receives a media type from the Content-Type field. The body is formatted if it returns true.
 type Formatter interface {
 	Match(mediatype string) bool
-	Format(dst *bytes.Buffer, src []byte) error
+	Format(w io.Writer, src []byte) error
 }
 
 // WithHide can be used to protect a request from being exposed.
@@ -404,7 +404,7 @@ func (j *JSONFormatter) Match(mediatype string) bool {
 }
 
 // Format JSON content.
-func (j *JSONFormatter) Format(dst *bytes.Buffer, src []byte) error {
+func (j *JSONFormatter) Format(w io.Writer, src []byte) error {
 	if !json.Valid(src) {
 		// We want to get the error of json.checkValid, not unmarshal it.
 		// The happy path has been optimized, maybe prematurely.
@@ -413,6 +413,10 @@ func (j *JSONFormatter) Format(dst *bytes.Buffer, src []byte) error {
 		}
 	}
 
-	err := json.Indent(dst, src, "", "    ")
+	var dst bytes.Buffer
+	err := json.Indent(&dst, src, "", "    ")
+	if err == nil {
+		_, err = dst.WriteTo(w)
+	}
 	return err
 }
