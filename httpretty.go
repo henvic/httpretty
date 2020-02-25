@@ -58,6 +58,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/textproto"
@@ -413,10 +414,11 @@ func (j *JSONFormatter) Format(w io.Writer, src []byte) error {
 		}
 	}
 
-	var dst bytes.Buffer
-	err := json.Indent(&dst, src, "", "    ")
-	if err == nil {
-		_, err = dst.WriteTo(w)
+	// avoiding allocation as we use *bytes.Buffer to store the formatted body before printing
+	dst, ok := w.(*bytes.Buffer)
+	if !ok {
+		// mitigating panic to avoid upsetting anyone who uses this directly
+		return errors.New("underlying writer for JSONFormatter must be *bytes.Buffer")
 	}
-	return err
+	return json.Indent(dst, src, "", "    ")
 }

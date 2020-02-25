@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -161,6 +162,15 @@ func testBody(t *testing.T, r io.Reader, want []byte) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf(`got body = %v, wanted %v`, string(got), string(want))
+	}
+}
+
+func TestJSONFormatterWriterError(t *testing.T) {
+	// verifies if function doesn't panic if passed writer isn't *bytes.Buffer
+	f := &JSONFormatter{}
+	want := "underlying writer for JSONFormatter must be *bytes.Buffer"
+	if err := f.Format(os.Stdout, []byte(`{}`)); err == nil || err.Error() != want {
+		t.Errorf("got format error = %v, wanted %v", err, want)
 	}
 }
 
