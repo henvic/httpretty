@@ -1355,48 +1355,59 @@ func TestOutgoingTooLongResponse(t *testing.T) {
 	testBody(t, resp.Body, []byte(petition))
 }
 
-type longResponseUnknownLengthHandler struct{}
+type longResponseUnknownLengthHandler struct {
+	repeat int
+}
 
 func (h longResponseUnknownLengthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header()["Date"] = nil
-	fmt.Fprint(w, petition)
+	fmt.Fprint(w, strings.Repeat(petition, h.repeat+1))
 }
 
 func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 	t.Parallel()
-
-	ts := httptest.NewServer(&longResponseUnknownLengthHandler{})
-	defer ts.Close()
-
-	logger := &Logger{
-		RequestHeader:  true,
-		RequestBody:    true,
-		ResponseHeader: true,
-		ResponseBody:   true,
+	testCases := []struct {
+		name   string
+		repeat int
+	}{
+		{name: "short", repeat: 1},
+		{name: "long", repeat: 100},
 	}
 
-	var buf bytes.Buffer
-	logger.SetOutput(&buf)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := httptest.NewServer(&longResponseUnknownLengthHandler{tc.repeat})
+			defer ts.Close()
 
-	client := &http.Client{
-		Transport: logger.RoundTripper(newTransport()),
-	}
+			logger := &Logger{
+				RequestHeader:  true,
+				RequestBody:    true,
+				ResponseHeader: true,
+				ResponseBody:   true,
+			}
 
-	uri := fmt.Sprintf("%s/long-response", ts.URL)
+			var buf bytes.Buffer
+			logger.SetOutput(&buf)
 
-	req, err := http.NewRequest(http.MethodGet, uri, nil)
+			client := &http.Client{
+				Transport: logger.RoundTripper(newTransport()),
+			}
 
-	if err != nil {
-		t.Errorf("cannot create request: %v", err)
-	}
+			uri := fmt.Sprintf("%s/long-response", ts.URL)
 
-	resp, err := client.Do(req)
+			req, err := http.NewRequest(http.MethodGet, uri, nil)
 
-	if err != nil {
-		t.Errorf("cannot connect to the server: %v", err)
-	}
+			if err != nil {
+				t.Errorf("cannot create request: %v", err)
+			}
 
-	want := fmt.Sprintf(`* Request to %s
+			resp, err := client.Do(req)
+
+			if err != nil {
+				t.Errorf("cannot connect to the server: %v", err)
+			}
+
+			want := fmt.Sprintf(`* Request to %s
 > GET /long-response HTTP/1.1
 > Host: %s
 
@@ -1406,11 +1417,13 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 * body is too long, skipping (contains more than 4096 bytes)
 `, uri, ts.Listener.Addr())
 
-	if got := buf.String(); got != want {
-		t.Errorf("logged HTTP request %s; want %s", got, want)
-	}
+			if got := buf.String(); got != want {
+				t.Errorf("logged HTTP request %s; want %s", got, want)
+			}
 
-	testBody(t, resp.Body, []byte(petition))
+			testBody(t, resp.Body, []byte(strings.Repeat(petition, tc.repeat+1)))
+		})
+	}
 }
 
 func multipartTestdata(writer *multipart.Writer, body *bytes.Buffer) {
