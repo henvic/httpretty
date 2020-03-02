@@ -1612,8 +1612,6 @@ func TestIncomingMutualTLS(t *testing.T) {
 		Certificates: []tls.Certificate{cert},
 	}
 
-	clientTLSConfig.BuildNameToCertificate()
-
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 
 	if err != nil {
@@ -1756,8 +1754,6 @@ func TestIncomingMutualTLSNoSafetyLogging(t *testing.T) {
 		RootCAs:      caCertPool,
 		Certificates: []tls.Certificate{cert},
 	}
-
-	clientTLSConfig.BuildNameToCertificate()
 
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 

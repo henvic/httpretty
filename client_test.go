@@ -1912,8 +1912,6 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 		Certificates: []tls.Certificate{cert},
 	}
 
-	clientTLSConfig.BuildNameToCertificate()
-
 	transport := newTransport()
 	transport.TLSClientConfig = clientTLSConfig
 
@@ -2057,9 +2055,6 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 		RootCAs:      caCertPool,
 		Certificates: []tls.Certificate{cert},
 	}
-
-	clientTLSConfig.BuildNameToCertificate()
-
 	transport := newTransport()
 	transport.TLSClientConfig = clientTLSConfig
 
