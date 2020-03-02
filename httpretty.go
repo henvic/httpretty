@@ -120,9 +120,11 @@ type Logger struct {
 	Formatters []Formatter
 
 	// MaxRequestBody the logger can print.
+	// If value is not set and Content-Length is not sent, 4096 bytes is considered.
 	MaxRequestBody int64
 
 	// MaxResponseBody the logger can print.
+	// If value is not set and Content-Length is not sent, 4096 bytes is considered.
 	MaxResponseBody int64
 
 	mu         sync.Mutex // ensures atomic writes; protects the following fields
@@ -140,7 +142,7 @@ type Filter func(req *http.Request) (skip bool, err error)
 
 // BodyFilter allows you to skip printing a HTTP body based on its associated Header.
 //
-// It can be used for omiting HTTP Request and Response bodies.
+// It can be used for omitting HTTP Request and Response bodies.
 // You can filter by checking properties such as Content-Type or Content-Length.
 //
 // On a HTTP server, this function is called even when no body is present due to
