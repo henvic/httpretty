@@ -1337,6 +1337,66 @@ func TestIncomingLongResponseUnknownLength(t *testing.T) {
 	t.Parallel()
 
 	logger := &Logger{
+		RequestHeader:   true,
+		RequestBody:     true,
+		ResponseHeader:  true,
+		ResponseBody:    true,
+		MaxResponseBody: 10000000,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	repeat := 100
+	is := inspect(logger.Middleware(longResponseUnknownLengthHandler{repeat: repeat}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	uri := fmt.Sprintf("%s/long-response", ts.URL)
+	repeatedBody := strings.Repeat(petition, repeat+1)
+
+	go func() {
+		client := newServerClient()
+
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		resp, err := client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+
+		testBody(t, resp.Body, []byte(repeatedBody))
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> GET /long-response HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+
+%s
+`, uri, is.req.RemoteAddr, ts.Listener.Addr(), repeatedBody)
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestIncomingLongResponseUnknownLengthTooLong(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
 		RequestHeader:  true,
 		RequestBody:    true,
 		ResponseHeader: true,

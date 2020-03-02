@@ -239,38 +239,25 @@ func (p *printer) printBodyUnknownLength(contentType string, maxLength int64, r 
 		maxLength = maxDefaultUnknownReadable
 	}
 
-	pb := make([]byte, maxLength)
-
-	n, err := shortReader.Read(pb)
-
-	// if the body is empty, return early.
-	// Server requests always return req.Body != nil, but return io.EOF immediately.
-	if n == 0 && err == io.EOF {
-		return
-	}
-
+	pb := make([]byte, maxLength+1) // read one extra bit to assure the length is longer than acceptable
+	n, err := io.ReadFull(shortReader, pb)
 	pb = pb[0:n] // trim any nil symbols left after writing in the byte slice.
 	buf := bytes.NewReader(pb)
-
-	if err != nil && err != io.EOF {
-		p.printf("* cannot read body: %v (%d bytes read)\n", err, n)
-
-		if n > 0 {
-			newBody = newBodyReaderBuf(buf, r)
-		}
-
-		return
-	}
-
 	newBody = newBodyReaderBuf(buf, r)
 
-	if err != io.EOF {
-		p.printf("* body is too long, skipping (contains more than %d bytes)\n", n)
-		return
+	switch {
+	// Server requests always return req.Body != nil, but the Reader returns io.EOF immediately.
+	// Avoiding returning early to mitigate any risk of bad reader implementations that might
+	// send something even after returning io.EOF if read again.
+	case err == io.EOF && n == 0:
+	case err == nil && int64(n) > maxLength:
+		p.printf("* body is too long, skipping (contains more than %d bytes)\n", n-1)
+	case err == io.ErrUnexpectedEOF || err == nil:
+		// cannot pass same bytes reader below because we only read it once.
+		p.printBodyReader(contentType, bytes.NewReader(pb))
+	default:
+		p.printf("* cannot read body: %v (%d bytes read)\n", err, n)
 	}
-
-	// cannot pass same bytes reader below because we only read it once.
-	p.printBodyReader(contentType, bytes.NewReader(pb))
 	return
 }
 
