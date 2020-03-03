@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Modified version of chef-runner/script/coverage
 # Copyright 2004 Mathias Lafeldt
