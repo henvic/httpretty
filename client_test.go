@@ -1122,6 +1122,116 @@ form received
 	}
 }
 
+func TestOutgoingBinaryBody(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		fmt.Fprint(w, "\x25\x50\x44\x46\x2d\x31\x2e\x33\x0a\x25\xc4\xe5\xf2\xe5\xeb\xa7")
+	}))
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	b := []byte("RIFF\x00\x00\x00\x00WEBPVP")
+	uri := fmt.Sprintf("%s/convert", ts.URL)
+	req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(b))
+	req.Header.Add("Content-Type", "image/webp")
+
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+
+	_, err = client.Do(req)
+
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+
+	want := fmt.Sprintf(`* Request to %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Content-Type: image/webp
+
+* body contains binary data
+< HTTP/1.1 200 OK
+< Content-Length: 16
+< Content-Type: application/pdf
+
+* body contains binary data
+`, uri, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header()["Content-Type"] = nil
+		fmt.Fprint(w, "\x25\x50\x44\x46\x2d\x31\x2e\x33\x0a\x25\xc4\xe5\xf2\xe5\xeb\xa7")
+	}))
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	b := []byte("RIFF\x00\x00\x00\x00WEBPVP")
+	uri := fmt.Sprintf("%s/convert", ts.URL)
+	req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(b))
+
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+
+	_, err = client.Do(req)
+
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+
+	want := fmt.Sprintf(`* Request to %s
+> POST /convert HTTP/1.1
+> Host: %s
+
+* body contains binary data
+< HTTP/1.1 200 OK
+< Content-Length: 16
+
+* body contains binary data
+`, uri, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 type longRequestHandler struct{}
 
 func (h longRequestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

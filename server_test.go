@@ -1100,6 +1100,131 @@ form received
 	}
 }
 
+func TestIncomingBinaryBody(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	is := inspect(logger.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		fmt.Fprint(w, "\x25\x50\x44\x46\x2d\x31\x2e\x33\x0a\x25\xc4\xe5\xf2\xe5\xeb\xa7")
+	})), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	uri := fmt.Sprintf("%s/convert", ts.URL)
+
+	go func() {
+		client := newServerClient()
+
+		b := []byte("RIFF\x00\x00\x00\x00WEBPVP")
+		req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(b))
+		req.Header.Add("Content-Type", "image/webp")
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 14
+> Content-Type: image/webp
+> User-Agent: Go-http-client/1.1
+
+* body contains binary data
+< HTTP/1.1 200 OK
+
+* body contains binary data
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestIncomingBinaryBodyNoMediatypeHeader(t *testing.T) {
+	t.Parallel()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	is := inspect(logger.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header()["Content-Type"] = nil
+		fmt.Fprint(w, "\x25\x50\x44\x46\x2d\x31\x2e\x33\x0a\x25\xc4\xe5\xf2\xe5\xeb\xa7")
+	})), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	uri := fmt.Sprintf("%s/convert", ts.URL)
+
+	go func() {
+		client := newServerClient()
+
+		b := []byte("RIFF\x00\x00\x00\x00WEBPVP")
+		req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(b))
+
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+
+		_, err = client.Do(req)
+
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+
+	is.Wait()
+
+	want := fmt.Sprintf(`* Request to %s
+* Request from %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 14
+> User-Agent: Go-http-client/1.1
+
+* body contains binary data
+< HTTP/1.1 200 OK
+
+* body contains binary data
+`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 func TestIncomingLongRequest(t *testing.T) {
 	t.Parallel()
 

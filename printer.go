@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/henvic/httpretty/internal/color"
@@ -204,6 +205,11 @@ func (p *printer) printResponseBodyOut(resp *http.Response) {
 		return
 	}
 
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" && isBinaryMediatype(contentType) {
+		p.println("* body contains binary data")
+		return
+	}
+
 	if p.logger.MaxResponseBody > 0 && resp.ContentLength > p.logger.MaxResponseBody {
 		p.printf("* body is too long (%d bytes) to print, skipping (longer than %d bytes)\n", resp.ContentLength, p.logger.MaxResponseBody)
 		return
@@ -228,6 +234,72 @@ func (p *printer) printResponseBodyOut(resp *http.Response) {
 	}()
 
 	p.printBodyReader(contentType, tee)
+}
+
+// isBinary uses heuristics to guess if file is binary (actually, "printable" in the terminal).
+// See discussion at https://groups.google.com/forum/#!topic/golang-nuts/YeLL7L7SwWs
+func isBinary(body []byte) bool {
+	if len(body) > 512 {
+		body = body[512:]
+	}
+
+	// If file contains UTF-8 OR UTF-16 BOM, consider it non-binary.
+	// Reference: https://tools.ietf.org/html/draft-ietf-websec-mime-sniff-03#section-5
+	if len(body) >= 3 && (bytes.Equal(body[:2], []byte{0xFE, 0xFF}) || // UTF-16BE BOM
+		bytes.Equal(body[:2], []byte{0xFF, 0xFE}) || // UTF-16LE BOM
+		bytes.Equal(body[:3], []byte{0xEF, 0xBB, 0xBF})) { // UTF-8 BOM
+		return false
+	}
+
+	// If all of the first n octets are binary data octets, consider it binary.
+	// Reference: https://github.com/golang/go/blob/349e7df2c3d0f9b5429e7c86121499c137faac7e/src/net/http/sniff.go#L297-L309
+	// c.f. section 5, step 4.
+	for _, b := range body {
+		switch {
+		case b <= 0x08,
+			b == 0x0B,
+			0x0E <= b && b <= 0x1A,
+			0x1C <= b && b <= 0x1F:
+			return true
+		}
+	}
+
+	// Otherwise, check against a white list of binary mimetypes.
+	mediatype, _, err := mime.ParseMediaType(http.DetectContentType(body))
+	if err != nil {
+		return false
+	}
+
+	return isBinaryMediatype(mediatype)
+}
+
+var binaryMediatypes = map[string]struct{}{
+	"application/pdf":               struct{}{},
+	"application/postscript":        struct{}{},
+	"image":                         struct{}{}, // for practical reasons, any image (including SVG) is considered binary data
+	"audio":                         struct{}{},
+	"application/ogg":               struct{}{},
+	"video":                         struct{}{},
+	"application/vnd.ms-fontobject": struct{}{},
+	"font":                          struct{}{},
+	"application/x-gzip":            struct{}{},
+	"application/zip":               struct{}{},
+	"application/x-rar-compressed":  struct{}{},
+	"application/wasm":              struct{}{},
+}
+
+func isBinaryMediatype(mediatype string) bool {
+	if _, ok := binaryMediatypes[mediatype]; ok {
+		return true
+	}
+
+	if parts := strings.SplitN(mediatype, "/", 2); len(parts) == 2 {
+		if _, ok := binaryMediatypes[parts[0]]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 const maxDefaultUnknownReadable = 4096 // bytes
@@ -416,6 +488,11 @@ func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) 
 		return
 	}
 
+	if mediatype := req.Header.Get("Content-Type"); mediatype != "" && isBinaryMediatype(mediatype) {
+		p.println("* body contains binary data")
+		return
+	}
+
 	if p.logger.MaxResponseBody > 0 && rec.size > p.logger.MaxResponseBody {
 		p.printf("* body is too long (%d bytes) to print, skipping (longer than %d bytes)\n", rec.size, p.logger.MaxResponseBody)
 		return
@@ -439,6 +516,11 @@ func (p *printer) printBodyReader(contentType string, r io.Reader) {
 
 	if err != nil {
 		p.printf("* cannot read body: %v\n", p.format(color.FgRed, err))
+		return
+	}
+
+	if isBinary(body) {
+		p.println("* body contains binary data")
 		return
 	}
 
@@ -558,6 +640,11 @@ func (p *printer) printRequestBody(req *http.Request) {
 	}
 
 	if skip {
+		return
+	}
+
+	if mediatype := req.Header.Get("Content-Type"); mediatype != "" && isBinaryMediatype(mediatype) {
+		p.println("* body contains binary data")
 		return
 	}
 
