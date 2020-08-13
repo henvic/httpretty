@@ -1759,12 +1759,13 @@ func TestIncomingMutualTLS(t *testing.T) {
 
 	go func() {
 		// Certificate generated with
-		// $ openssl req -newkey rsa:2048 \
-		// -new -nodes -x509 \
+		// $ openssl req -x509 -newkey rsa:2048 \
+		// -new -nodes -sha256 \
 		// -days 36500 \
 		// -out cert.pem \
 		// -keyout key.pem \
-		// -subj "/C=US/ST=California/L=Carmel-by-the-Sea/O=Plifk/OU=Cloud/CN=localhost"
+		// -subj "/C=US/ST=California/L=Carmel-by-the-Sea/O=Plifk/OU=Cloud/CN=localhost" -extensions EXT -config <( \
+		// printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth, clientAuth")
 		if errcp := server.ServeTLS(listener, "testdata/cert.pem", "testdata/key.pem"); errcp != http.ErrServerClosed {
 			t.Errorf("server exit with unexpected error: %v", errcp)
 		}
@@ -1902,12 +1903,13 @@ func TestIncomingMutualTLSNoSafetyLogging(t *testing.T) {
 
 	go func() {
 		// Certificate generated with
-		// $ openssl req -newkey rsa:2048 \
-		// -new -nodes -x509 \
+		// $ openssl req -x509 -newkey rsa:2048 \
+		// -new -nodes -sha256 \
 		// -days 36500 \
 		// -out cert.pem \
 		// -keyout key.pem \
-		// -subj "/C=US/ST=California/L=Carmel-by-the-Sea/O=Plifk/OU=Cloud/CN=localhost"
+		// -subj "/C=US/ST=California/L=Carmel-by-the-Sea/O=Plifk/OU=Cloud/CN=localhost" -extensions EXT -config <( \
+		// printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth, clientAuth")
 		if errcp := server.ServeTLS(listener, "testdata/cert.pem", "testdata/key.pem"); errcp != http.ErrServerClosed {
 			t.Errorf("server exit with unexpected error: %v", errcp)
 		}
