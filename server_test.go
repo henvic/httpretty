@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // inspect a request (not concurrency safe).
@@ -176,8 +177,6 @@ func outgoingGetServer(client *http.Client, ts *httptest.Server, done func()) {
 }
 
 func TestIncomingConcurrency(t *testing.T) {
-	t.Parallel()
-
 	logger := &Logger{
 		TLS:            true,
 		RequestHeader:  true,
@@ -194,19 +193,23 @@ func TestIncomingConcurrency(t *testing.T) {
 	ts := httptest.NewServer(logger.Middleware(helloHandler{}))
 	defer ts.Close()
 
-	var wg sync.WaitGroup
 	concurrency := 100
-	wg.Add(concurrency)
-
-	for i := 0; i < concurrency; i++ {
+	{
+		var wg sync.WaitGroup
+		wg.Add(concurrency)
+		i := 0
+	repeat:
 		client := &http.Client{
 			Transport: newTransport(),
 		}
-
 		go outgoingGetServer(client, ts, wg.Done)
+		if i < concurrency-1 {
+			i++
+			time.Sleep(2 * time.Millisecond)
+			goto repeat
+		}
+		wg.Wait()
 	}
-
-	wg.Wait()
 
 	got := buf.String()
 
