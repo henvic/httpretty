@@ -14,18 +14,18 @@ func TestFormat(t *testing.T) {
 	}
 }
 
-func TestFormatLong(t *testing.T) {
-	want := "\x1b[102;95mHello World, my little 92%!(EXTRA string=robot)\x1b[0m"
-	got := Format(BgHiGreen, FgHiMagenta, "Hello World, %s %s %v", "my", "little", FgHiGreen, "robot")
+func TestMalformedFormat(t *testing.T) {
+	want := "\x1b[102mHello World(EXTRA color.Attribute=95)\x1b[0m"
+	got := Format(BgHiGreen, "Hello World", FgHiMagenta)
 
 	if got != want {
 		t.Errorf("Expecting %s, got '%s'\n", want, got)
 	}
 }
 
-func TestMalformedFormat(t *testing.T) {
-	want := "\x1b[102mHello World%!(EXTRA color.Attribute=95)\x1b[0m"
-	got := Format(BgHiGreen, "Hello World", FgHiMagenta)
+func TestMalformedSliceFormat(t *testing.T) {
+	want := "\x1b[102mHello World(EXTRA color.Attribute=[95 41])\x1b[0m"
+	got := Format(BgHiGreen, "Hello World", []Attribute{FgHiMagenta, BgRed})
 
 	if got != want {
 		t.Errorf("Expecting %s, got '%s'\n", want, got)
@@ -78,19 +78,19 @@ func TestFormatStartingWithNumber(t *testing.T) {
 		t.Errorf("Must be integer; not a similar like Attribute")
 	}
 
-	got := Format(BgHiGreen, FgHiMagenta, "%v forks", number)
+	got := Format(BgHiGreen, FgHiMagenta, number, " forks")
 
 	if got != want {
 		t.Errorf("Expecting %s, got '%s'\n", want, got)
 	}
 }
 
-func TestFormatAsSprintf(t *testing.T) {
-	want := "\x1b[102;95mHello World\x1b[0m"
-	got := Format(BgHiGreen, FgHiMagenta, "%v", "Hello World")
-
-	if got != want {
-		t.Errorf("Expecting %s, got '%s'\n", want, got)
+func TestFormatCtrlChar(t *testing.T) {
+	if want, got := "\x1b[ma%b\x1b[0m", Format("a%b"); got != want {
+		t.Errorf(`expected Format(a%%b) to be %q, got %q instead`, want, got)
+	}
+	if want, got := "\\x1b[34;46ma%b\\x1b[0m", Escape(Format(FgBlue, BgCyan, "a%b")); got != want {
+		t.Errorf(`expected escaped formatted a%%b to be %q, got %q instead`, want, got)
 	}
 }
 
@@ -113,11 +113,35 @@ func TestStripAttributes(t *testing.T) {
 	}
 }
 
+func TestStripAttributesEmpty(t *testing.T) {
+	if got := StripAttributes(); got != "" {
+		t.Errorf("StripAttributes() should work")
+	}
+}
+
+func TestStripAttributesFirstParam(t *testing.T) {
+	want := "foo (EXTRA color.Attribute=32)"
+	got := StripAttributes("foo ", FgGreen)
+
+	if got != want {
+		t.Errorf(`expected StripAttributes = %v, got %v instead`, want, got)
+	}
+}
+
 func TestStripAttributesSame(t *testing.T) {
 	want := "this is a regular string"
 	got := StripAttributes(want)
 
 	if got != want {
 		t.Errorf("StripAttributes(%s) = %s, wanted %s", want, got, want)
+	}
+}
+
+func TestStripAttributesWithExtraColorAttribute(t *testing.T) {
+	want := "this is a regular string (EXTRA color.Attribute=91) with an invalid color Attribute field"
+	got := StripAttributes(BgCyan, []Attribute{FgBlack}, "this is a regular string ", FgHiRed, " with an invalid color Attribute field")
+
+	if got != want {
+		t.Errorf("StripAttributes(input) = %s, wanted %s", got, want)
 	}
 }

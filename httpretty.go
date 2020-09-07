@@ -305,7 +305,7 @@ func (r roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err err
 
 	defer func() {
 		if err != nil {
-			p.printf("* %s\n", p.format(color.FgRed, err))
+			p.printf("* %s\n", p.format(color.FgRed, err.Error()))
 
 			if resp == nil {
 				return

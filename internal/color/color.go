@@ -82,60 +82,71 @@ const (
 )
 
 // Format text for terminal.
+// You can pass an arbitrary number of Attribute or []Attribute followed by any other values,
+// that can either be a string or something else (that is converted to string using fmt.Sprint).
 func Format(s ...interface{}) string {
 	if len(s) == 0 {
 		return ""
 	}
 
-	out := make([]interface{}, 0)
 	params := []Attribute{}
 	in := -1
 
 	for i, v := range s {
 		switch vt := v.(type) {
 		case []Attribute:
-			params = append(params, vt...)
+			if in == -1 {
+				params = append(params, vt...)
+			} else {
+				s[i] = printExtraColorAttribute(v)
+			}
 		case Attribute:
-			params = append(params, vt)
+			if in == -1 {
+				params = append(params, vt)
+			} else {
+				s[i] = printExtraColorAttribute(v)
+			}
 		default:
-			in = i
-			goto over
+			if in == -1 {
+				in = i
+			}
 		}
 	}
 
-over:
-	if in != -1 {
-		out = s[in:]
-	}
-
-	if len(out) == 0 {
+	if in == -1 || len(s[in:]) == 0 {
 		return ""
 	}
+	return wrap(params, fmt.Sprint(s[in:]...))
+}
 
-	return wrap(params, sprintf(out...))
+func printExtraColorAttribute(v interface{}) string {
+	return fmt.Sprintf("(EXTRA color.Attribute=%v)", v)
 }
 
 // StripAttributes from input arguments and return unformatted text.
 func StripAttributes(s ...interface{}) (raw string) {
-	for k, v := range s {
+	in := -1
+	for i, v := range s {
 		switch v.(type) {
 		case []Attribute, Attribute:
+			if in != -1 {
+				s[i] = printExtraColorAttribute(v)
+			}
 		default:
-			return sprintf(s[k:]...)
+			if in == -1 {
+				in = i
+			}
 		}
 	}
-
-	return
+	if in == -1 {
+		in = 0
+	}
+	return fmt.Sprint(s[in:]...)
 }
 
 // Escape text for terminal.
 func Escape(s string) string {
 	return strings.Replace(s, escape, unescape, -1)
-}
-
-func sprintf(s ...interface{}) string {
-	format := s[0]
-	return fmt.Sprintf(fmt.Sprintf("%v", format), s[1:]...)
 }
 
 // sequence returns a formated SGR sequence to be plugged into a "\x1b[...m"

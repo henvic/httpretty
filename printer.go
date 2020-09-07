@@ -143,7 +143,7 @@ func (p *printer) checkFilter(req *http.Request) (skip bool) {
 	ok, err := safeFilter(filter, req)
 
 	if err != nil {
-		p.printf("* cannot filter request: %s: %s\n", p.format(color.FgBlue, "%s %s", req.Method, req.URL), p.format(color.FgRed, "%v", err))
+		p.printf("* cannot filter request: %s: %s\n", p.format(color.FgBlue, fmt.Sprintf("%s %s", req.Method, req.URL)), p.format(color.FgRed, err.Error()))
 		return false // never filter out the request if the filter errored
 	}
 
@@ -198,7 +198,7 @@ func (p *printer) printResponseBodyOut(resp *http.Response) {
 	skip, err := p.checkBodyFiltered(resp.Header)
 
 	if err != nil {
-		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: %v", err))
+		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: ", err.Error()))
 	}
 
 	if skip {
@@ -460,7 +460,7 @@ func (p *printer) printCertificate(hostname string, cert *x509.Certificate) {
 	}
 
 	if err := cert.VerifyHostname(hostname); err != nil {
-		p.printf("*  %s\n", p.format(color.FgRed, err))
+		p.printf("*  %s\n", p.format(color.FgRed, err.Error()))
 		return
 	}
 
@@ -481,7 +481,7 @@ func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) 
 	skip, err := p.checkBodyFiltered(rec.Header())
 
 	if err != nil {
-		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: %v", err))
+		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: ", err.Error()))
 	}
 
 	if skip {
@@ -515,7 +515,7 @@ func (p *printer) printBodyReader(contentType string, r io.Reader) {
 	body, err := ioutil.ReadAll(r)
 
 	if err != nil {
-		p.printf("* cannot read body: %v\n", p.format(color.FgRed, err))
+		p.printf("* cannot read body: %v\n", p.format(color.FgRed, err.Error()))
 		return
 	}
 
@@ -532,7 +532,7 @@ func (p *printer) printBodyReader(contentType string, r io.Reader) {
 		var formatted bytes.Buffer
 		switch err := p.safeBodyFormat(f, &formatted, body); {
 		case err != nil:
-			p.printf("* body cannot be formatted: %v\n%s\n", p.format(color.FgRed, err), string(body))
+			p.printf("* body cannot be formatted: %v\n%s\n", p.format(color.FgRed, err.Error()), string(body))
 		default:
 			p.println(formatted.String())
 		}
@@ -636,7 +636,7 @@ func (p *printer) printRequestBody(req *http.Request) {
 	skip, err := p.checkBodyFiltered(req.Header)
 
 	if err != nil {
-		p.printf("* %s\n", p.format(color.FgRed, "error on request body filter: %v", err))
+		p.printf("* %s\n", p.format(color.FgRed, "error on request body filter: ", err.Error()))
 	}
 
 	if skip {

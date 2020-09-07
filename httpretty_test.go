@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"testing"
@@ -69,6 +70,95 @@ func TestPrintRequestWithColors(t *testing.T) {
 
 	want := "> \x1b[34;1mPOST\x1b[0m \x1b[33m/\x1b[0m \x1b[34mHTTP/1.1\x1b[0m" +
 		"\n> \x1b[34;1mHost\x1b[0m\x1b[31m:\x1b[0m \x1b[33mwxww.example.com\x1b[0m\n\n"
+
+	if got := buf.String(); got != want {
+		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
+	}
+}
+
+func TestEncodingQueryStringParams(t *testing.T) {
+	// Regression test for verifying query string parameters are being encoded correctly when printing with colors.
+	// Issue reported by @mislav in https://github.com/henvic/httpretty/issues/9.
+	t.Parallel()
+
+	qs := url.Values{}
+	qs.Set("a", "b")
+	qs.Set("i", "j")
+	qs.Set("x", "y")
+	qs.Set("z", "+=")
+	qs.Set("var", "foo&bar")
+	u := url.URL{
+		Scheme:   "http",
+		Host:     "www.example.com",
+		Path:     "/mypath",
+		RawQuery: qs.Encode(),
+	}
+	var req, err = http.NewRequest(http.MethodPost, u.String(), nil)
+
+	if err != nil {
+		panic(err)
+	}
+
+	logger := &Logger{
+		TLS:            true,
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+		Colors:         true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.PrintRequest(req)
+
+	want := "> \x1b[34;1mPOST\x1b[0m \x1b[33m/mypath?a=b&i=j&var=foo%26bar&x=y&z=%2B%3D\x1b[0m \x1b[34mHTTP/1.1\x1b[0m" +
+		"\n> \x1b[34;1mHost\x1b[0m\x1b[31m:\x1b[0m \x1b[33mwww.example.com\x1b[0m\n\n"
+
+	if got := buf.String(); got != want {
+		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
+	}
+}
+
+func TestEncodingQueryStringParamsNoColors(t *testing.T) {
+	t.Parallel()
+
+	qs := url.Values{}
+	qs.Set("a", "b")
+	qs.Set("i", "j")
+	qs.Set("x", "y")
+	qs.Set("z", "+=")
+	qs.Set("var", "foo&bar")
+	u := url.URL{
+		Scheme:   "http",
+		Host:     "www.example.com",
+		Path:     "/mypath",
+		RawQuery: qs.Encode(),
+	}
+	var req, err = http.NewRequest(http.MethodPost, u.String(), nil)
+
+	if err != nil {
+		panic(err)
+	}
+
+	logger := &Logger{
+		TLS:            true,
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	logger.PrintRequest(req)
+
+	want := `> POST /mypath?a=b&i=j&var=foo%26bar&x=y&z=%2B%3D HTTP/1.1
+> Host: www.example.com
+
+`
 
 	if got := buf.String(); got != want {
 		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
