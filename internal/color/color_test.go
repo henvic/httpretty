@@ -32,7 +32,7 @@ func TestMalformedFormat(t *testing.T) {
 	}
 }
 
-func TestFormatArray(t *testing.T) {
+func TestFormatSlice(t *testing.T) {
 	format := []Attribute{BgHiGreen, FgHiMagenta}
 
 	want := "\x1b[102;95mHello World\x1b[0m"
