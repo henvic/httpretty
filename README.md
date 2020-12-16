@@ -86,7 +86,7 @@ logger.SetFilter(func filteredURIs(req *http.Request) (bool, error) {
 		return true, nil
 	}
 
-	if path := req.URL.Path; path == "/debug" | strings.HasPrefix(path, "/debug/") {
+	if path := req.URL.Path; path == "/debug" || strings.HasPrefix(path, "/debug/") {
 		return true, nil
 	}
 
