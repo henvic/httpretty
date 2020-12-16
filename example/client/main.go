@@ -20,11 +20,9 @@ func main() {
 		Formatters:     []httpretty.Formatter{&httpretty.JSONFormatter{}},
 	}
 
-	client := &http.Client{
-		Transport: logger.RoundTripper(http.DefaultTransport),
-	}
+	http.DefaultClient.Transport = logger.RoundTripper(http.DefaultTransport)
 
-	if _, err := client.Get("https://www.google.com/"); err != nil {
+	if _, err := http.Get("https://www.google.com/"); err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)
 	}
