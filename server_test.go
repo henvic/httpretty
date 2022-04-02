@@ -1703,7 +1703,7 @@ func TestIncomingTLS(t *testing.T) {
 Hello, world!
 `, is.req.RemoteAddr)
 
-	if got := buf.String(); got != want {
+	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
@@ -1847,7 +1847,7 @@ func TestIncomingMutualTLS(t *testing.T) {
 Hello, world!
 `, host, is.req.RemoteAddr, port)
 
-	if got := buf.String(); got != want {
+	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }

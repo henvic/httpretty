@@ -1800,7 +1800,7 @@ func TestOutgoingTLS(t *testing.T) {
 Hello, world!
 `, ts.URL)
 
-	if got := buf.String(); got != want {
+	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 
@@ -1867,7 +1867,7 @@ func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 Hello, world!
 `, ts.URL)
 
-	got := buf.String()
+	got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1)
 
 	if got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -2147,7 +2147,7 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 Hello, world!
 `, host, port)
 
-	if got := buf.String(); got != want {
+	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
