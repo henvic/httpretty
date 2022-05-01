@@ -1108,6 +1108,7 @@ func TestOutgoingForm(t *testing.T) {
 	want := fmt.Sprintf(`* Request to %s
 > POST /form HTTP/1.1
 > Host: %s
+> Content-Length: 32
 
 email=root%%40example.com&foo=bar
 < HTTP/1.1 200 OK
@@ -1163,6 +1164,7 @@ func TestOutgoingBinaryBody(t *testing.T) {
 	want := fmt.Sprintf(`* Request to %s
 > POST /convert HTTP/1.1
 > Host: %s
+> Content-Length: 14
 > Content-Type: image/webp
 
 * body contains binary data
@@ -1219,6 +1221,7 @@ func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
 	want := fmt.Sprintf(`* Request to %s
 > POST /convert HTTP/1.1
 > Host: %s
+> Content-Length: 14
 
 * body contains binary data
 < HTTP/1.1 200 OK
@@ -1280,6 +1283,7 @@ func TestOutgoingLongRequest(t *testing.T) {
 	want := fmt.Sprintf(`* Request to %s
 > PUT /long-request HTTP/1.1
 > Host: %s
+> Content-Length: 9846
 
 %s
 < HTTP/1.1 200 OK
@@ -1730,6 +1734,7 @@ func TestOutgoingMultipartForm(t *testing.T) {
 	want := fmt.Sprintf(`* Request to %s
 > POST /multipart-upload HTTP/1.1
 > Host: %s
+> Content-Length: 10355
 > Content-Type: %s
 
 < HTTP/1.1 200 OK

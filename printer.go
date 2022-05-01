@@ -623,8 +623,21 @@ func (p *printer) printRequestHeader(req *http.Request) {
 		)
 	}
 
-	p.printHeaders('>', req.Header)
+	p.printHeaders('>', addHeaderContentLength(req))
 	p.println()
+}
+
+// addHeaderContentLength returns a copy of the given header with an additional header, Content-Length, if it's known.
+func addHeaderContentLength(req *http.Request) http.Header {
+	if req.ContentLength == 0 && len(req.Header.Values("Content-Length")) == 0 {
+		return req.Header
+	}
+	cp := http.Header{}
+	for k, v := range req.Header {
+		cp[k] = v
+	}
+	cp.Set("Content-Length", fmt.Sprintf("%d", req.ContentLength))
+	return cp
 }
 
 func (p *printer) printRequestBody(req *http.Request) {
