@@ -33,10 +33,8 @@ func (h helloHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestOutgoing(t *testing.T) {
 	// important: cannot be in parallel because we are capturing os.Stdout
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
-
 	logger := &Logger{
 		TLS:            true,
 		RequestHeader:  true,
@@ -44,11 +42,14 @@ func TestOutgoing(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
+	client := &http.Client{
+		// Only use the default transport (http.DefaultTransport) on TestOutgoing.
+		// Passing nil here = http.DefaultTransport.
+		Transport: logger.RoundTripper(nil),
+	}
 	// code for capturing stdout was copied from the Go source code file src/testing/run_example.go:
 	// https://github.com/golang/go/blob/ac56baa/src/testing/run_example.go
 	stdout := os.Stdout
-
 	r, w, err := os.Pipe()
 	if err != nil {
 		panic(err)
@@ -64,38 +65,26 @@ func TestOutgoing(t *testing.T) {
 		}
 		outC <- buf.String()
 	}()
-
 	var want string
-
 	defer func() {
 		w.Close()
 		os.Stdout = stdout
-		out := <-outC
-
-		if out != want {
+		if out := <-outC; out != want {
 			t.Errorf("logged HTTP request %s; want %s", out, want)
 		}
 	}()
 
-	client := &http.Client{
-		// Only use the default transport (http.DefaultTransport) on TestOutgoing.
-		// Passing nil here = http.DefaultTransport.
-		Transport: logger.RoundTripper(nil),
-	}
-
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
 
+	// see preceding deferred function, where want is used.
 	want = fmt.Sprintf(`* Request to %s
 > GET / HTTP/1.1
 > Host: %s
@@ -113,33 +102,26 @@ Hello, world!
 
 func outgoingGet(t *testing.T, client *http.Client, ts *httptest.Server, done func()) {
 	defer done()
-
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
 func TestOutgoingConcurrency(t *testing.T) {
 	// don't run in parallel
-
-	if Race {
+	if race {
 		t.Skip("cannot test because until data race issues are resolved on the standard library https://github.com/golang/go/issues/30597")
 	}
 
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
-
 	logger := &Logger{
 		TLS:            true,
 		RequestHeader:  true,
@@ -147,12 +129,9 @@ func TestOutgoingConcurrency(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SetFlusher(OnEnd)
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
@@ -160,22 +139,17 @@ func TestOutgoingConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	concurrency := 100
 	wg.Add(concurrency)
-
 	for i := 0; i < concurrency; i++ {
 		go outgoingGet(t, client, ts, wg.Done)
 		time.Sleep(time.Millisecond) // let's slow down just a little bit ("too many files descriptors open" on a slow machine, more realistic traffic, and so on)
 	}
 
 	wg.Wait()
-
 	got := buf.String()
-
 	gotConcurrency := strings.Count(got, "< HTTP/1.1 200 OK")
-
 	if concurrency != gotConcurrency {
 		t.Errorf("logged %d requests, wanted %d", concurrency, gotConcurrency)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET / HTTP/1.1
 > Host: %s
@@ -186,7 +160,6 @@ func TestOutgoingConcurrency(t *testing.T) {
 < Content-Type: text/plain; charset=utf-8
 
 Hello, world!`, ts.URL, ts.Listener.Addr())
-
 	if !strings.Contains(got, want) {
 		t.Errorf("Request doesn't contain expected body")
 	}
@@ -194,48 +167,36 @@ Hello, world!`, ts.URL, ts.Listener.Addr())
 
 func TestOutgoingMinimal(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
 	// only prints the request URI.
 	logger := &Logger{}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	req.AddCookie(&http.Cookie{
 		Name:  "food",
 		Value: "sorbet",
 	})
-
-	if err != nil {
-		t.Errorf("cannot create request: %v", err)
-	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
-	want := fmt.Sprintf("* Request to %s\n", ts.URL)
-
-	if got := buf.String(); got != want {
+	if want, got := fmt.Sprintf("* Request to %s\n", ts.URL), buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
 
 func TestOutgoingSanitized(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
@@ -245,32 +206,24 @@ func TestOutgoingSanitized(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	req.AddCookie(&http.Cookie{
 		Name:  "food",
 		Value: "sorbet",
 	})
-
-	if err != nil {
-		t.Errorf("cannot create request: %v", err)
-	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET / HTTP/1.1
 > Host: %s
@@ -283,7 +236,6 @@ func TestOutgoingSanitized(t *testing.T) {
 
 Hello, world!
 `, ts.URL, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -291,7 +243,6 @@ Hello, world!
 
 func TestOutgoingSkipSanitize(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
@@ -302,32 +253,24 @@ func TestOutgoingSkipSanitize(t *testing.T) {
 		ResponseBody:   true,
 		SkipSanitize:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	req.AddCookie(&http.Cookie{
 		Name:  "food",
 		Value: "sorbet",
 	})
-
-	if err != nil {
-		t.Errorf("cannot create request: %v", err)
-	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET / HTTP/1.1
 > Host: %s
@@ -340,7 +283,6 @@ func TestOutgoingSkipSanitize(t *testing.T) {
 
 Hello, world!
 `, ts.URL, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -348,7 +290,6 @@ Hello, world!
 
 func TestOutgoingHide(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
@@ -358,56 +299,42 @@ func TestOutgoingHide(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
 	req = req.WithContext(WithHide(context.Background()))
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	if buf.Len() != 0 {
 		t.Errorf("request should not be logged, got %v", buf.String())
 	}
-	want := ""
-
-	if got := buf.String(); got != want {
-		t.Errorf("logged HTTP request %s; want %s", got, want)
+	if got := buf.String(); got != "" {
+		t.Errorf("logged HTTP request %s; want none", got)
 	}
 }
 
 func filteredURIs(req *http.Request) (bool, error) {
 	path := req.URL.Path
-
 	if path == "/filtered" {
 		return true, nil
 	}
-
 	if path == "/unfiltered" {
 		return false, nil
 	}
-
 	return false, errors.New("filter error triggered")
 }
 
 func TestOutgoingFilter(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
@@ -417,10 +344,8 @@ func TestOutgoingFilter(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SetOutput(ioutil.Discard)
 	logger.SetFilter(filteredURIs)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
@@ -437,17 +362,12 @@ func TestOutgoingFilter(t *testing.T) {
 		t.Run(tc.uri, func(t *testing.T) {
 			var buf bytes.Buffer
 			logger.SetOutput(&buf)
-
-			_, err := client.Get(fmt.Sprintf("%s/%s", ts.URL, tc.uri))
-
-			if err != nil {
+			if _, err := client.Get(fmt.Sprintf("%s/%s", ts.URL, tc.uri)); err != nil {
 				t.Errorf("cannot create request: %v", err)
 			}
-
 			if tc.want == "" && buf.Len() != 0 {
 				t.Errorf("wanted input to be filtered, got %v instead", buf.String())
 			}
-
 			if !strings.Contains(buf.String(), tc.want) {
 				t.Errorf(`expected input to contain "%v", got %v instead`, tc.want, buf.String())
 			}
@@ -457,7 +377,6 @@ func TestOutgoingFilter(t *testing.T) {
 
 func TestOutgoingFilterPanicked(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
@@ -467,22 +386,17 @@ func TestOutgoingFilterPanicked(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SetOutput(ioutil.Discard)
 	logger.SetFilter(func(req *http.Request) (bool, error) {
 		panic("evil panic")
 	})
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	_, err := client.Get(ts.URL)
-
-	if err != nil {
+	if _, err := client.Get(ts.URL); err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
 
@@ -497,7 +411,6 @@ func TestOutgoingFilterPanicked(t *testing.T) {
 
 Hello, world!
 `, ts.URL, ts.URL, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf(`expected input to contain "%v", got %v instead`, want, got)
 	}
@@ -505,7 +418,6 @@ Hello, world!
 
 func TestOutgoingSkipHeader(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&jsonHandler{})
 	defer ts.Close()
 
@@ -515,15 +427,12 @@ func TestOutgoingSkipHeader(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SkipHeader([]string{
 		"user-agent",
 		"content-type",
 	})
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
@@ -531,18 +440,13 @@ func TestOutgoingSkipHeader(t *testing.T) {
 	uri := fmt.Sprintf("%s/json", ts.URL)
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -552,7 +456,6 @@ func TestOutgoingSkipHeader(t *testing.T) {
 
 {"result":"Hello, world!","number":3.14}
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -560,7 +463,6 @@ func TestOutgoingSkipHeader(t *testing.T) {
 
 func TestOutgoingBodyFilter(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&jsonHandler{})
 	defer ts.Close()
 
@@ -570,34 +472,25 @@ func TestOutgoingBodyFilter(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SetBodyFilter(func(h http.Header) (skip bool, err error) {
 		mediatype, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
 		return mediatype == "application/json", nil
 	})
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -608,7 +501,6 @@ func TestOutgoingBodyFilter(t *testing.T) {
 < Content-Type: application/json; charset=utf-8
 
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -616,7 +508,6 @@ func TestOutgoingBodyFilter(t *testing.T) {
 
 func TestOutgoingBodyFilterSoftError(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&jsonHandler{})
 	defer ts.Close()
 
@@ -626,34 +517,25 @@ func TestOutgoingBodyFilterSoftError(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SetBodyFilter(func(h http.Header) (skip bool, err error) {
 		// filter anyway, but print soft error saying something went wrong during the filtering.
 		return true, errors.New("incomplete implementation")
 	})
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -665,7 +547,6 @@ func TestOutgoingBodyFilterSoftError(t *testing.T) {
 
 * error on response body filter: incomplete implementation
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -673,7 +554,6 @@ func TestOutgoingBodyFilterSoftError(t *testing.T) {
 
 func TestOutgoingBodyFilterPanicked(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&jsonHandler{})
 	defer ts.Close()
 
@@ -683,33 +563,24 @@ func TestOutgoingBodyFilterPanicked(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	logger.SetBodyFilter(func(h http.Header) (skip bool, err error) {
 		panic("evil panic")
 	})
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -722,7 +593,6 @@ func TestOutgoingBodyFilterPanicked(t *testing.T) {
 * panic while filtering body: evil panic
 {"result":"Hello, world!","number":3.14}
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -730,7 +600,6 @@ func TestOutgoingBodyFilterPanicked(t *testing.T) {
 
 func TestOutgoingWithTimeRequest(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&helloHandler{})
 	defer ts.Close()
 
@@ -742,33 +611,24 @@ func TestOutgoingWithTimeRequest(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	got := buf.String()
-
 	if !strings.Contains(got, "* Request at ") {
 		t.Error("missing printing start time of request")
 	}
-
 	if !strings.Contains(got, "* Request took ") {
 		t.Error("missing printing request duration")
 	}
@@ -779,28 +639,23 @@ type jsonHandler struct{}
 func (h jsonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header()["Date"] = nil
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
 	type res struct {
 		Result string      `json:"result"`
 		Number json.Number `json:"number"`
 	}
-
 	b, err := json.Marshal(res{
 		Result: "Hello, world!",
 		Number: json.Number("3.14"),
 	})
-
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	fmt.Fprint(w, string(b))
 }
 
 func TestOutgoingFormattedJSON(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&jsonHandler{})
 	defer ts.Close()
 
@@ -809,34 +664,25 @@ func TestOutgoingFormattedJSON(t *testing.T) {
 		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&JSONFormatter{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -851,7 +697,6 @@ func TestOutgoingFormattedJSON(t *testing.T) {
     "number": 3.14
 }
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -867,7 +712,6 @@ func (h badJSONHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestOutgoingBadJSON(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&badJSONHandler{})
 	defer ts.Close()
 
@@ -876,34 +720,25 @@ func TestOutgoingBadJSON(t *testing.T) {
 		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&JSONFormatter{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -916,7 +751,6 @@ func TestOutgoingBadJSON(t *testing.T) {
 * body cannot be formatted: invalid character '}' looking for beginning of value
 {"bad": }
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -934,7 +768,6 @@ func (p *panickingFormatter) Format(w io.Writer, src []byte) error {
 
 func TestOutgoingFormatterPanicked(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&badJSONHandler{})
 	defer ts.Close()
 
@@ -943,34 +776,25 @@ func TestOutgoingFormatterPanicked(t *testing.T) {
 		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&panickingFormatter{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&panickingFormatter{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -983,7 +807,6 @@ func TestOutgoingFormatterPanicked(t *testing.T) {
 * body cannot be formatted: panic: evil formatter
 {"bad": }
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1001,7 +824,6 @@ func (p *panickingFormatterMatcher) Format(w io.Writer, src []byte) error {
 
 func TestOutgoingFormatterMatcherPanicked(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&badJSONHandler{})
 	defer ts.Close()
 
@@ -1010,34 +832,25 @@ func TestOutgoingFormatterMatcherPanicked(t *testing.T) {
 		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&panickingFormatterMatcher{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&panickingFormatterMatcher{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -1050,7 +863,6 @@ func TestOutgoingFormatterMatcherPanicked(t *testing.T) {
 * panic while testing body format: evil matcher
 {"bad": }
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1065,7 +877,6 @@ func (h formHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestOutgoingForm(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&formHandler{})
 	defer ts.Close()
 
@@ -1074,15 +885,12 @@ func TestOutgoingForm(t *testing.T) {
 		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&JSONFormatter{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
@@ -1090,21 +898,14 @@ func TestOutgoingForm(t *testing.T) {
 	form := url.Values{}
 	form.Add("foo", "bar")
 	form.Add("email", "root@example.com")
-
 	uri := fmt.Sprintf("%s/form", ts.URL)
-
 	req, err := http.NewRequest(http.MethodPost, uri, strings.NewReader(form.Encode()))
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > POST /form HTTP/1.1
 > Host: %s
@@ -1117,7 +918,6 @@ email=root%%40example.com&foo=bar
 
 form received
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1125,7 +925,6 @@ form received
 
 func TestOutgoingBinaryBody(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header()["Date"] = nil
 		fmt.Fprint(w, "\x25\x50\x44\x46\x2d\x31\x2e\x33\x0a\x25\xc4\xe5\xf2\xe5\xeb\xa7")
@@ -1138,10 +937,8 @@ func TestOutgoingBinaryBody(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
@@ -1149,18 +946,13 @@ func TestOutgoingBinaryBody(t *testing.T) {
 	b := []byte("RIFF\x00\x00\x00\x00WEBPVP")
 	uri := fmt.Sprintf("%s/convert", ts.URL)
 	req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(b))
-	req.Header.Add("Content-Type", "image/webp")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	req.Header.Add("Content-Type", "image/webp")
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > POST /convert HTTP/1.1
 > Host: %s
@@ -1174,7 +966,6 @@ func TestOutgoingBinaryBody(t *testing.T) {
 
 * body contains binary data
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1182,7 +973,6 @@ func TestOutgoingBinaryBody(t *testing.T) {
 
 func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header()["Date"] = nil
 		w.Header()["Content-Type"] = nil
@@ -1196,10 +986,8 @@ func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
@@ -1207,17 +995,13 @@ func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
 	b := []byte("RIFF\x00\x00\x00\x00WEBPVP")
 	uri := fmt.Sprintf("%s/convert", ts.URL)
 	req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(b))
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
 
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > POST /convert HTTP/1.1
 > Host: %s
@@ -1229,7 +1013,6 @@ func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
 
 * body contains binary data
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1244,7 +1027,6 @@ func (h longRequestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestOutgoingLongRequest(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&longRequestHandler{})
 	defer ts.Close()
 
@@ -1253,33 +1035,24 @@ func TestOutgoingLongRequest(t *testing.T) {
 		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&JSONFormatter{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/long-request", ts.URL)
-
 	req, err := http.NewRequest(http.MethodPut, uri, strings.NewReader(petition))
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > PUT /long-request HTTP/1.1
 > Host: %s
@@ -1292,7 +1065,6 @@ func TestOutgoingLongRequest(t *testing.T) {
 
 long request received
 `, uri, ts.Listener.Addr(), petition)
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1303,7 +1075,6 @@ type longResponseHandler struct{}
 func (h longResponseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header()["Date"] = nil
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(petition)))
-
 	if r.Method != http.MethodHead {
 		fmt.Fprint(w, petition)
 	}
@@ -1311,40 +1082,31 @@ func (h longResponseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestOutgoingLongResponse(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&longResponseHandler{})
 	defer ts.Close()
 
 	logger := &Logger{
-		RequestHeader:  true,
-		RequestBody:    true,
-		ResponseHeader: true,
-		ResponseBody:   true,
+		RequestHeader:   true,
+		RequestBody:     true,
+		ResponseHeader:  true,
+		ResponseBody:    true,
+		MaxResponseBody: int64(len(petition) + 1000), // value larger than the text
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.MaxResponseBody = int64(len(petition) + 1000) // value larger than the text
 
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
-
 	uri := fmt.Sprintf("%s/long-response", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /long-response HTTP/1.1
 > Host: %s
@@ -1355,50 +1117,38 @@ func TestOutgoingLongResponse(t *testing.T) {
 
 %s
 `, uri, ts.Listener.Addr(), petition)
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
-
 	testBody(t, resp.Body, []byte(petition))
 }
 
 func TestOutgoingLongResponseHead(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&longResponseHandler{})
 	defer ts.Close()
-
 	logger := &Logger{
-		RequestHeader:  true,
-		RequestBody:    true,
-		ResponseHeader: true,
-		ResponseBody:   true,
+		RequestHeader:   true,
+		RequestBody:     true,
+		ResponseHeader:  true,
+		ResponseBody:    true,
+		MaxResponseBody: int64(len(petition) + 1000), // value larger than the text
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.MaxResponseBody = int64(len(petition) + 1000) // value larger than the text
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/long-response", ts.URL)
-
 	req, err := http.NewRequest(http.MethodHead, uri, nil)
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > HEAD /long-response HTTP/1.1
 > Host: %s
@@ -1407,50 +1157,38 @@ func TestOutgoingLongResponseHead(t *testing.T) {
 < Content-Length: 9846
 
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
-
 	testBody(t, resp.Body, []byte{})
 }
 
 func TestOutgoingTooLongResponse(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(&longResponseHandler{})
 	defer ts.Close()
-
 	logger := &Logger{
-		RequestHeader:  true,
-		RequestBody:    true,
-		ResponseHeader: true,
-		ResponseBody:   true,
+		RequestHeader:   true,
+		RequestBody:     true,
+		ResponseHeader:  true,
+		ResponseBody:    true,
+		MaxResponseBody: 5000, // value smaller than the text
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.MaxResponseBody = 5000 // value smaller than the text
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/long-response", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /long-response HTTP/1.1
 > Host: %s
@@ -1461,11 +1199,9 @@ func TestOutgoingTooLongResponse(t *testing.T) {
 
 * body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)
 `, uri, ts.Listener.Addr())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
-
 	testBody(t, resp.Body, []byte(petition))
 }
 
@@ -1492,7 +1228,6 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ts := httptest.NewServer(&longResponseUnknownLengthHandler{tc.repeat})
 			defer ts.Close()
-
 			logger := &Logger{
 				RequestHeader:   true,
 				RequestBody:     true,
@@ -1500,28 +1235,21 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 				ResponseBody:    true,
 				MaxResponseBody: 10000000,
 			}
-
 			var buf bytes.Buffer
 			logger.SetOutput(&buf)
-
 			client := &http.Client{
 				Transport: logger.RoundTripper(newTransport()),
 			}
 
 			uri := fmt.Sprintf("%s/long-response", ts.URL)
-
 			req, err := http.NewRequest(http.MethodGet, uri, nil)
-
 			if err != nil {
 				t.Errorf("cannot create request: %v", err)
 			}
-
 			resp, err := client.Do(req)
-
 			if err != nil {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
-
 			repeatedBody := strings.Repeat(petition, tc.repeat+1)
 			want := fmt.Sprintf(`* Request to %s
 > GET /long-response HTTP/1.1
@@ -1532,11 +1260,9 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 
 %s
 `, uri, ts.Listener.Addr(), repeatedBody)
-
 			if got := buf.String(); got != want {
 				t.Errorf("logged HTTP request %s; want %s", got, want)
 			}
-
 			testBody(t, resp.Body, []byte(repeatedBody))
 		})
 	}
@@ -1556,35 +1282,27 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ts := httptest.NewServer(&longResponseUnknownLengthHandler{tc.repeat})
 			defer ts.Close()
-
 			logger := &Logger{
 				RequestHeader:  true,
 				RequestBody:    true,
 				ResponseHeader: true,
 				ResponseBody:   true,
 			}
-
 			var buf bytes.Buffer
 			logger.SetOutput(&buf)
-
 			client := &http.Client{
 				Transport: logger.RoundTripper(newTransport()),
 			}
 
 			uri := fmt.Sprintf("%s/long-response", ts.URL)
-
 			req, err := http.NewRequest(http.MethodGet, uri, nil)
-
 			if err != nil {
 				t.Errorf("cannot create request: %v", err)
 			}
-
 			resp, err := client.Do(req)
-
 			if err != nil {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
-
 			want := fmt.Sprintf(`* Request to %s
 > GET /long-response HTTP/1.1
 > Host: %s
@@ -1594,11 +1312,9 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 
 * body is too long, skipping (contains more than 4096 bytes)
 `, uri, ts.Listener.Addr())
-
 			if got := buf.String(); got != want {
 				t.Errorf("logged HTTP request %s; want %s", got, want)
 			}
-
 			testBody(t, resp.Body, []byte(strings.Repeat(petition, tc.repeat+1)))
 		})
 	}
@@ -1612,7 +1328,6 @@ func multipartTestdata(writer *multipart.Writer, body *bytes.Buffer) {
 		{"author", "Frédéric Bastiat"},
 		{"title", "Candlemakers' Petition"},
 	}
-
 	for _, p := range params {
 		if err := writer.WriteField(p.name, p.value); err != nil {
 			panic(err)
@@ -1620,15 +1335,12 @@ func multipartTestdata(writer *multipart.Writer, body *bytes.Buffer) {
 	}
 
 	part, err := writer.CreateFormFile("file", "petition")
-
 	if err != nil {
 		panic(err)
 	}
-
 	if _, err = part.Write([]byte(petition)); err != nil {
 		panic(err)
 	}
-
 	if err = writer.Close(); err != nil {
 		panic(err)
 	}
@@ -1641,55 +1353,44 @@ type multipartHandler struct {
 func (h multipartHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t := h.t
 	w.Header()["Date"] = nil
-
 	if err := r.ParseMultipartForm(1000); err != nil {
 		t.Errorf("cannot parse multipart form at server-side: %v", err)
 	}
-
 	wantAuthor := "Frédéric Bastiat"
 	wantTitle := "Candlemakers' Petition"
 	wantFilename := "petition"
 	gotAuthor := r.Form.Get("author")
 	gotTitle := r.Form.Get("title")
-
 	if gotAuthor != wantAuthor {
 		t.Errorf("got author %s, wanted %s", gotAuthor, wantAuthor)
 	}
-
 	if gotTitle != wantTitle {
 		t.Errorf("got author %s, wanted %s", gotTitle, wantTitle)
 	}
 
 	file, header, err := r.FormFile("file")
-
 	if err != nil {
 		t.Errorf("server cannot read file form sent over multipart: %v", err)
 	}
-
 	if header.Filename != wantFilename {
 		t.Errorf("got filename %s, wanted %s", header.Filename, wantFilename)
 	}
-
 	if header.Size != int64(len(petition)) {
 		t.Errorf("got size %d, wanted %d", header.Size, len(petition))
 	}
 
 	b, err := ioutil.ReadAll(file)
-
 	if err != nil {
 		t.Errorf("server cannot read file sent over multipart: %v", err)
 	}
-
 	if string(b) != petition {
 		t.Error("server received different text than uploaded")
 	}
-
 	fmt.Fprint(w, "upload received")
 }
 
 func TestOutgoingMultipartForm(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewServer(multipartHandler{t})
 	defer ts.Close()
 
@@ -1698,39 +1399,28 @@ func TestOutgoingMultipartForm(t *testing.T) {
 		// TODO(henvic): print request body once support for printing out multipart/formdata body is added.
 		ResponseHeader: true,
 		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
-	logger.Formatters = []Formatter{
-		&JSONFormatter{},
-	}
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	uri := fmt.Sprintf("%s/multipart-upload", ts.URL)
-
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	multipartTestdata(writer, body)
-
 	req, err := http.NewRequest(http.MethodPost, uri, body)
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	_, err = client.Do(req)
-
-	if err != nil {
+	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > POST /multipart-upload HTTP/1.1
 > Host: %s
@@ -1743,7 +1433,6 @@ func TestOutgoingMultipartForm(t *testing.T) {
 
 upload received
 `, uri, ts.Listener.Addr(), writer.FormDataContentType())
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1751,7 +1440,6 @@ upload received
 
 func TestOutgoingTLS(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewTLSServer(&helloHandler{})
 	defer ts.Close()
 
@@ -1762,30 +1450,21 @@ func TestOutgoingTLS(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := ts.Client()
-
 	client.Transport = logger.RoundTripper(client.Transport)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
-
-	req.Host = "example.com" // overriding the Host header to send
-
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
+	req.Host = "example.com" // overriding the Host header to send
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET / HTTP/1.1
 > Host: example.com
@@ -1804,17 +1483,14 @@ func TestOutgoingTLS(t *testing.T) {
 
 Hello, world!
 `, ts.URL)
-
 	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
-
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
 func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewTLSServer(&helloHandler{})
 	defer ts.Close()
 
@@ -1825,33 +1501,23 @@ func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := ts.Client()
-
 	transport := client.Transport.(*http.Transport)
 	transport.TLSClientConfig.InsecureSkipVerify = true
-
 	client.Transport = logger.RoundTripper(transport)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
-
-	req.Host = "example.com" // overriding the Host header to send
-
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
+	req.Host = "example.com" // overriding the Host header to send
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
 	resp, err := client.Do(req)
-
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 * Skipping TLS verification: connection is susceptible to man-in-the-middle attacks.
 > GET / HTTP/1.1
@@ -1877,16 +1543,13 @@ Hello, world!
 	if got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
-
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
 func TestOutgoingTLSInvalidCertificate(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewTLSServer(&helloHandler{})
 	ts.Config.ErrorLog = log.New(ioutil.Discard, "", 0)
-
 	defer ts.Close()
 
 	logger := &Logger{
@@ -1896,31 +1559,21 @@ func TestOutgoingTLSInvalidCertificate(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
-
-	req.Host = "example.com" // overriding the Host header to send
-
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	var unknownAuthorityError x509.UnknownAuthorityError
-	if err == nil || !errors.As(err, &unknownAuthorityError) {
+	req.Host = "example.com" // overriding the Host header to send
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err == nil || !strings.Contains(err.Error(), "x509") {
 		t.Errorf("cannot connect to the server has unexpected error: %v", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 > GET / HTTP/1.1
 > Host: example.com
@@ -1928,7 +1581,6 @@ func TestOutgoingTLSInvalidCertificate(t *testing.T) {
 
 * x509: certificate signed by unknown authority
 `, ts.URL)
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1936,15 +1588,11 @@ func TestOutgoingTLSInvalidCertificate(t *testing.T) {
 
 func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 	t.Parallel()
-
 	ts := httptest.NewUnstartedServer(&helloHandler{})
-
 	ts.TLS = &tls.Config{
 		ClientAuth: tls.RequireAndVerifyClientCert,
 	}
-
 	ts.StartTLS()
-
 	defer ts.Close()
 
 	logger := &Logger{
@@ -1954,46 +1602,33 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
 	ts.Config.ErrorLog = log.New(ioutil.Discard, "", 0)
-
 	client := ts.Client()
-
 	cert, err := tls.LoadX509KeyPair("testdata/cert-client.pem", "testdata/key-client.pem")
-
 	if err != nil {
 		panic(err)
 	}
-
 	cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
-
 	if err != nil {
 		t.Errorf("failed to parse certificate for copying Leaf field")
 	}
-
 	transport := client.Transport.(*http.Transport)
 	transport.TLSClientConfig.Certificates = []tls.Certificate{
 		cert,
 	}
-
 	client.Transport = logger.RoundTripper(transport)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
-	req.Host = "example.com" // overriding the Host header to send
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	_, err = client.Do(req)
-
-	if err == nil || !strings.Contains(err.Error(), "bad certificate") {
+	req.Host = "example.com" // overriding the Host header to send
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	if _, err = client.Do(req); err == nil || !strings.Contains(err.Error(), "bad certificate") {
 		t.Errorf("got: %v, expected bad certificate error message", err)
 	}
-
 	want := fmt.Sprintf(`* Request to %s
 * Client certificate:
 *  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
@@ -2006,7 +1641,6 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 
 * remote error: tls: bad certificate
 `, ts.URL)
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -2014,23 +1648,17 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 
 func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 	t.Parallel()
-
 	caCert, err := ioutil.ReadFile("testdata/cert.pem")
-
 	if err != nil {
 		panic(err)
 	}
-
 	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
-
 	if err != nil {
 		panic(err)
 	}
-
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 	caCertPool.AppendCertsFromPEM(clientCert)
-
 	tlsConfig := &tls.Config{
 		ClientCAs:  caCertPool,
 		ClientAuth: tls.RequireAndVerifyClientCert,
@@ -2042,15 +1670,11 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 		TLSConfig: tlsConfig,
 		Handler:   &helloHandler{},
 	}
-
 	listener, err := netListener()
-
 	if err != nil {
 		panic(fmt.Sprintf("failed to listen on a port: %v", err))
 	}
-
 	defer listener.Close()
-
 	go func() {
 		// Certificate generated with
 		// $ openssl req -x509 -newkey rsa:2048 \
@@ -2064,7 +1688,6 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 			t.Errorf("server exit with unexpected error: %v", errcp)
 		}
 	}()
-
 	defer server.Shutdown(context.Background())
 
 	// Certificate generated with
@@ -2075,13 +1698,10 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 	// -keyout key-client.pem \
 	// -subj "/C=NL/ST=Zuid-Holland/L=Rotterdam/O=Client/OU=User/CN=User"
 	cert, err := tls.LoadX509KeyPair("testdata/cert-client.pem", "testdata/key-client.pem")
-
 	if err != nil {
 		t.Errorf("failed to load X509 key pair: %v", err)
 	}
-
 	cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
-
 	if err != nil {
 		t.Errorf("failed to parse certificate for copying Leaf field")
 	}
@@ -2091,14 +1711,11 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 		RootCAs:      caCertPool,
 		Certificates: []tls.Certificate{cert},
 	}
-
 	transport := newTransport()
 	transport.TLSClientConfig = clientTLSConfig
-
 	client := &http.Client{
 		Transport: transport,
 	}
-
 	logger := &Logger{
 		TLS:            true,
 		RequestHeader:  true,
@@ -2106,28 +1723,20 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client.Transport = logger.RoundTripper(client.Transport)
-
 	_, port, err := net.SplitHostPort(listener.Addr().String())
-
 	if err != nil {
 		panic(err)
 	}
 
 	var host = fmt.Sprintf("https://localhost:%s/mutual-tls-test", port)
-
 	resp, err := client.Get(host)
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	testBody(t, resp.Body, []byte("Hello, world!"))
-
 	want := fmt.Sprintf(`* Request to %s
 * Client certificate:
 *  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
@@ -2151,7 +1760,6 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 
 Hello, world!
 `, host, port)
-
 	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -2159,23 +1767,17 @@ Hello, world!
 
 func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 	t.Parallel()
-
 	caCert, err := ioutil.ReadFile("testdata/cert.pem")
-
 	if err != nil {
 		panic(err)
 	}
-
 	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
-
 	if err != nil {
 		panic(err)
 	}
-
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 	caCertPool.AppendCertsFromPEM(clientCert)
-
 	tlsConfig := &tls.Config{
 		ClientCAs:  caCertPool,
 		ClientAuth: tls.RequireAndVerifyClientCert,
@@ -2187,15 +1789,11 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 		TLSConfig: tlsConfig,
 		Handler:   &helloHandler{},
 	}
-
 	listener, err := netListener()
-
 	if err != nil {
 		panic(fmt.Sprintf("failed to listen on a port: %v", err))
 	}
-
 	defer listener.Close()
-
 	go func() {
 		// Certificate generated with
 		// $ openssl req -x509 -newkey rsa:2048 \
@@ -2209,7 +1807,6 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 			t.Errorf("server exit with unexpected error: %v", errcp)
 		}
 	}()
-
 	defer server.Shutdown(context.Background())
 
 	// Certificate generated with
@@ -2220,13 +1817,10 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 	// -keyout key-client.pem \
 	// -subj "/C=NL/ST=Zuid-Holland/L=Rotterdam/O=Client/OU=User/CN=User"
 	cert, err := tls.LoadX509KeyPair("testdata/cert-client.pem", "testdata/key-client.pem")
-
 	if err != nil {
 		t.Errorf("failed to load X509 key pair: %v", err)
 	}
-
 	cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
-
 	if err != nil {
 		t.Errorf("failed to parse certificate for copying Leaf field")
 	}
@@ -2238,11 +1832,9 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 	}
 	transport := newTransport()
 	transport.TLSClientConfig = clientTLSConfig
-
 	client := &http.Client{
 		Transport: transport,
 	}
-
 	logger := &Logger{
 		// TLS must be false
 		RequestHeader:  true,
@@ -2250,28 +1842,19 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-
 	client.Transport = logger.RoundTripper(client.Transport)
-
 	_, port, err := net.SplitHostPort(listener.Addr().String())
-
 	if err != nil {
 		panic(err)
 	}
-
 	var host = fmt.Sprintf("https://localhost:%s/mutual-tls-test", port)
-
 	resp, err := client.Get(host)
-
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
 	testBody(t, resp.Body, []byte("Hello, world!"))
-
 	want := fmt.Sprintf(`* Request to %s
 > GET /mutual-tls-test HTTP/1.1
 > Host: localhost:%s
@@ -2282,7 +1865,6 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 
 Hello, world!
 `, host, port)
-
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -2290,12 +1872,10 @@ Hello, world!
 
 // netListener is similar to httptest.newlocalListener() and listens locally in a random port.
 // See https://github.com/golang/go/blob/5375c71289917ac7b25c6fa4bb0f4fa17be19a07/src/net/http/httptest/server.go#L60-L75
-func netListener() (listener net.Listener, err error) {
-	listener, err = net.Listen("tcp", "127.0.0.1:0")
-
+func netListener() (net.Listener, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return net.Listen("tcp6", "[::1]:0")
 	}
-
-	return
+	return listener, nil
 }

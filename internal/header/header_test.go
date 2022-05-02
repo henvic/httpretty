@@ -7,9 +7,8 @@ import (
 )
 
 func TestSanitize(t *testing.T) {
-	var headers = http.Header{}
-
 	// no need to test request and response headers sanitization separately
+	var headers = http.Header{}
 	headers.Set("Accept", "*/*")
 	headers.Set("User-Agent", "curl/7.54.0")
 	headers.Add("Cookie", "abcd=secret1")
@@ -22,11 +21,9 @@ func TestSanitize(t *testing.T) {
 	headers.Set("Content-Length", "3")
 
 	var got = Sanitize(DefaultSanitizers, headers)
-
 	if len(headers) != len(got) {
 		t.Errorf("Expected length of sanitized headers (%d) to be equal to length of original headers (%d)", len(got), len(headers))
 	}
-
 	want := http.Header{
 		"Accept":              []string{"*/*"},
 		"User-Agent":          []string{"curl/7.54.0"},
@@ -37,7 +34,6 @@ func TestSanitize(t *testing.T) {
 		"Content-Type":        []string{"application/x-www-form-urlencoded"},
 		"Content-Length":      []string{"3"},
 	}
-
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Sanitized headers doesn't match expected value: wanted %+v, got %+v instead", want, got)
 	}

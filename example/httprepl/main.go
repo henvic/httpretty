@@ -24,13 +24,13 @@ func main() {
 		Formatters:     []httpretty.Formatter{&httpretty.JSONFormatter{}},
 	}
 
+	// Using a custom HTTP client using the logger RoundTripper, rather than http.DefaultClient.
 	client := &http.Client{
 		Transport: logger.RoundTripper(http.DefaultTransport),
 	}
 
 	fmt.Print("httprepl is a small HTTP client REPL (read-eval-print-loop) program example\n\n")
 	help()
-
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("$ ")
@@ -40,7 +40,6 @@ func main() {
 
 func readEvalPrint(reader *bufio.Reader, client *http.Client) {
 	s, err := reader.ReadString('\n')
-
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot read stdin: %v\n", err)
 		os.Exit(1)
@@ -51,7 +50,6 @@ func readEvalPrint(reader *bufio.Reader, client *http.Client) {
 	} else {
 		s = strings.TrimRight(s, "\n")
 	}
-
 	s = strings.TrimSpace(s)
 
 	switch {
@@ -71,7 +69,6 @@ func readEvalPrint(reader *bufio.Reader, client *http.Client) {
 
 	s = strings.TrimPrefix(s, "get ")
 	uri, err := url.Parse(s)
-
 	if err == nil && uri.Scheme == "" {
 		uri.Scheme = "http"
 		s = uri.String()
@@ -81,7 +78,6 @@ func readEvalPrint(reader *bufio.Reader, client *http.Client) {
 	if _, err := client.Get(s); err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n\n", err)
 	}
-
 	fmt.Println()
 }
 

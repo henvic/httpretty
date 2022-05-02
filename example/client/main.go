@@ -19,9 +19,10 @@ func main() {
 		Colors:         true, // erase line if you don't like colors
 		Formatters:     []httpretty.Formatter{&httpretty.JSONFormatter{}},
 	}
-
+	// Set the default HTTP client to use the logger RoundTripper.
 	http.DefaultClient.Transport = logger.RoundTripper(http.DefaultTransport)
 
+	// Example of request.
 	if _, err := http.Get("https://www.google.com/"); err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)

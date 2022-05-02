@@ -261,65 +261,51 @@ func (l *Logger) RoundTripper(rt http.RoundTripper) http.RoundTripper {
 // RoundTrip implements the http.RoundTrip interface.
 func (r roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	tripper := r.rt
-
 	if tripper == nil {
 		// BUG(henvic): net/http data race condition when the client
 		// does concurrent requests using the very same HTTP transport.
 		// See Go standard library issue https://golang.org/issue/30597
 		tripper = http.RoundTripper(http.DefaultTransport)
 	}
-
 	l := r.logger
 	p := newPrinter(l)
 	defer p.flush()
-
 	if hide := req.Context().Value(contextHide{}); hide != nil || p.checkFilter(req) {
 		return tripper.RoundTrip(req)
 	}
-
 	var tlsClientConfig *tls.Config
-
 	if l.Time {
 		defer p.printTimeRequest()()
 	}
-
 	if !l.SkipRequestInfo {
 		p.printRequestInfo(req)
 	}
-
 	if transport, ok := tripper.(*http.Transport); ok && transport.TLSClientConfig != nil {
 		tlsClientConfig = transport.TLSClientConfig
-
 		if tlsClientConfig.InsecureSkipVerify {
 			p.printf("* Skipping TLS verification: %s\n",
 				p.format(color.FgRed, "connection is susceptible to man-in-the-middle attacks."))
 		}
 	}
-
+	// Maybe print outgoing TLS information.
 	if l.TLS && tlsClientConfig != nil {
 		// please remember http.Request.TLS is ignored by the HTTP client.
 		p.printOutgoingClientTLS(tlsClientConfig)
 	}
-
 	p.printRequest(req)
-
 	defer func() {
 		if err != nil {
 			p.printf("* %s\n", p.format(color.FgRed, err.Error()))
-
 			if resp == nil {
 				return
 			}
 		}
-
 		if l.TLS {
 			p.printTLSInfo(resp.TLS, false)
 			p.printTLSServer(req.Host, resp.TLS)
 		}
-
 		p.printResponse(resp)
 	}()
-
 	return tripper.RoundTrip(req)
 }
 
@@ -341,36 +327,27 @@ func (h httpHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	l := h.logger
 	p := newPrinter(l)
 	defer p.flush()
-
 	if hide := req.Context().Value(contextHide{}); hide != nil || p.checkFilter(req) {
 		h.next.ServeHTTP(w, req)
 		return
 	}
-
 	if p.logger.Time {
 		defer p.printTimeRequest()()
 	}
-
 	if !p.logger.SkipRequestInfo {
 		p.printRequestInfo(req)
 	}
-
 	if p.logger.TLS {
 		p.printTLSInfo(req.TLS, true)
 		p.printIncomingClientTLS(req.TLS)
 	}
-
 	p.printRequest(req)
-
 	rec := &responseRecorder{
-		ResponseWriter: w,
-
-		statusCode: http.StatusOK,
-
+		ResponseWriter:  w,
+		statusCode:      http.StatusOK,
 		maxReadableBody: l.MaxResponseBody,
 		buf:             &bytes.Buffer{},
 	}
-
 	defer p.printServerResponse(req, rec)
 	h.next.ServeHTTP(rec, req)
 }
@@ -380,11 +357,9 @@ func (h httpHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // It doesn't log TLS connection details or request duration.
 func (l *Logger) PrintRequest(req *http.Request) {
 	var p = printer{logger: l}
-
 	if skip := p.checkFilter(req); skip {
 		return
 	}
-
 	p.printRequest(req)
 }
 
@@ -415,7 +390,6 @@ func (j *JSONFormatter) Format(w io.Writer, src []byte) error {
 			return err
 		}
 	}
-
 	// avoiding allocation as we use *bytes.Buffer to store the formatted body before printing
 	dst, ok := w.(*bytes.Buffer)
 	if !ok {

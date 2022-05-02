@@ -10,6 +10,5 @@ var petition = func() string {
 	if err != nil {
 		panic(err)
 	}
-
 	return string(content)
 }()

@@ -21,8 +21,7 @@ func main() {
 
 	addr := ":8090"
 	fmt.Printf("Open http://localhost%s in the browser.\n", addr)
-
-	if err := http.ListenAndServe(":8090", logger.Middleware(helloHandler{})); err != http.ErrServerClosed {
+	if err := http.ListenAndServe(addr, logger.Middleware(helloHandler{})); err != http.ErrServerClosed {
 		fmt.Fprintln(os.Stderr, err)
 	}
 }
