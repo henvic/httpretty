@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -74,17 +75,7 @@ func TestIncoming(t *testing.T) {
 	}()
 
 	is.Wait()
-	want := fmt.Sprintf(`* Request to http://%s/
-* Request from %s
-> GET / HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-
-Hello, world!
-`, is.req.Host, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), is.req.Host, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -118,18 +109,7 @@ func TestIncomingNotFound(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to http://%s/
-* Request from %s
-> GET / HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 404 Not Found
-< Content-Type: text/plain; charset=utf-8
-< X-Content-Type-Options: nosniff
-
-`, is.req.Host, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), is.req.Host, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -137,14 +117,11 @@ func TestIncomingNotFound(t *testing.T) {
 
 func outgoingGetServer(client *http.Client, ts *httptest.Server, done func()) {
 	defer done()
-
 	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-
 	if err != nil {
 		panic(err)
 	}
-
 	if _, err := client.Do(req); err != nil {
 		panic(err)
 	}
@@ -187,14 +164,7 @@ func TestIncomingConcurrency(t *testing.T) {
 	if concurrency != gotConcurrency {
 		t.Errorf("logged %d requests, wanted %d", concurrency, gotConcurrency)
 	}
-	want := fmt.Sprintf(`> GET / HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-
-Hello, world!`, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), ts.Listener.Addr())
 	if !strings.Contains(got, want) {
 		t.Errorf("Request doesn't contain expected body")
 	}
@@ -227,9 +197,7 @@ func TestIncomingMinimal(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-`, uri, is.req.RemoteAddr)
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -267,18 +235,7 @@ func TestIncomingSanitized(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /incoming HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> Cookie: food=████████████████████
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-
-Hello, world!
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -386,18 +343,7 @@ func TestIncomingFilterPanicked(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-	want := fmt.Sprintf(`* cannot filter request: GET /: panic: evil panic
-* Request to %v/
-* Request from %v
-> GET / HTTP/1.1
-> Host: %v
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-
-Hello, world!
-`, ts.URL, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf(`expected input to contain "%v", got %v instead`, want, got)
 	}
@@ -433,16 +379,7 @@ func TestIncomingSkipHeader(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-
-< HTTP/1.1 200 OK
-
-{"result":"Hello, world!","number":3.14}
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -479,17 +416,7 @@ func TestIncomingBodyFilter(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -526,19 +453,7 @@ func TestIncomingBodyFilterSoftError(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-* error on request body filter: incomplete implementation
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-* error on response body filter: incomplete implementation
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -574,20 +489,7 @@ func TestIncomingBodyFilterPanicked(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-* panic while filtering body: evil panic
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-* panic while filtering body: evil panic
-{"result":"Hello, world!","number":3.14}
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -661,21 +563,7 @@ func TestIncomingFormattedJSON(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-{
-    "result": "Hello, world!",
-    "number": 3.14
-}
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -711,19 +599,7 @@ func TestIncomingBadJSON(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-* body cannot be formatted: invalid character '}' looking for beginning of value
-{"bad": }
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -759,19 +635,7 @@ func TestIncomingFormatterPanicked(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-* body cannot be formatted: panic: evil formatter
-{"bad": }
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -807,19 +671,7 @@ func TestIncomingFormatterMatcherPanicked(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /json HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Type: application/json; charset=utf-8
-
-* panic while testing body format: evil matcher
-{"bad": }
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -858,19 +710,7 @@ func TestIncomingForm(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> POST /form HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> Content-Length: 32
-> User-Agent: Go-http-client/1.1
-
-email=root%%40example.com&foo=bar
-< HTTP/1.1 200 OK
-
-form received
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -907,20 +747,7 @@ func TestIncomingBinaryBody(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> POST /convert HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> Content-Length: 14
-> Content-Type: image/webp
-> User-Agent: Go-http-client/1.1
-
-* body contains binary data
-< HTTP/1.1 200 OK
-
-* body contains binary data
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -957,19 +784,7 @@ func TestIncomingBinaryBodyNoMediatypeHeader(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> POST /convert HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> Content-Length: 14
-> User-Agent: Go-http-client/1.1
-
-* body contains binary data
-< HTTP/1.1 200 OK
-
-* body contains binary data
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1001,19 +816,7 @@ func TestIncomingLongRequest(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> PUT /long-request HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> Content-Length: 9846
-> User-Agent: Go-http-client/1.1
-
-%s
-< HTTP/1.1 200 OK
-
-long request received
-`, uri, is.req.RemoteAddr, ts.Listener.Addr(), petition)
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr(), petition)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1048,18 +851,7 @@ func TestIncomingLongResponse(t *testing.T) {
 		testBody(t, resp.Body, []byte(petition))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /long-response HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-< Content-Length: 9846
-
-%s
-`, uri, is.req.RemoteAddr, ts.Listener.Addr(), petition)
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr(), petition)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1092,16 +884,7 @@ func TestIncomingLongResponseHead(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> HEAD /long-response HTTP/1.1
-> Host: %s
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-< Content-Length: 9846
-
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1136,18 +919,7 @@ func TestIncomingTooLongResponse(t *testing.T) {
 		testBody(t, resp.Body, []byte(petition))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /long-response HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-< Content-Length: 9846
-
-* body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1184,17 +956,7 @@ func TestIncomingLongResponseUnknownLength(t *testing.T) {
 		testBody(t, resp.Body, []byte(repeatedBody))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /long-response HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-
-%s
-`, uri, is.req.RemoteAddr, ts.Listener.Addr(), repeatedBody)
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr(), repeatedBody)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1229,17 +991,7 @@ func TestIncomingLongResponseUnknownLengthTooLong(t *testing.T) {
 		testBody(t, resp.Body, []byte(petition))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /long-response HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-
-* body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)
-`, uri, is.req.RemoteAddr, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1278,19 +1030,7 @@ func TestIncomingMultipartForm(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> POST /multipart-upload HTTP/1.1
-> Host: %s
-> Accept-Encoding: gzip
-> Content-Length: 10355
-> Content-Type: %s
-> User-Agent: Go-http-client/1.1
-
-< HTTP/1.1 200 OK
-
-upload received
-`, uri, is.req.RemoteAddr, ts.Listener.Addr(), writer.FormDataContentType())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr(), writer.FormDataContentType())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1326,19 +1066,8 @@ func TestIncomingTLS(t *testing.T) {
 		testBody(t, resp.Body, []byte("Hello, world!"))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to https://example.com/
-* Request from %s
-* TLS connection using TLS 1.3 / TLS_AES_128_GCM_SHA256
-> GET / HTTP/1.1
-> Host: example.com
-> Accept-Encoding: gzip
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-
-Hello, world!
-`, is.req.RemoteAddr)
-	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
+	want := fmt.Sprintf(golden(t.Name()), is.req.RemoteAddr)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
@@ -1437,25 +1166,8 @@ func TestIncomingMutualTLS(t *testing.T) {
 		testBody(t, resp.Body, []byte("Hello, world!"))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-* TLS connection using TLS 1.3 / TLS_AES_128_GCM_SHA256
-* ALPN: h2 accepted
-* Client certificate:
-*  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-*  start date: Sat Jan 25 20:12:36 UTC 2020
-*  expire date: Mon Jan  1 20:12:36 UTC 2120
-*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-> GET /mutual-tls-test HTTP/2.0
-> Host: localhost:%s
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/2.0
-
-< HTTP/2.0 200 OK
-
-Hello, world!
-`, host, is.req.RemoteAddr, port)
-	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
+	want := fmt.Sprintf(golden(t.Name()), host, is.req.RemoteAddr, port)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
@@ -1552,17 +1264,7 @@ func TestIncomingMutualTLSNoSafetyLogging(t *testing.T) {
 		testBody(t, resp.Body, []byte("Hello, world!"))
 	}()
 	is.Wait()
-	want := fmt.Sprintf(`* Request to %s
-* Request from %s
-> GET /mutual-tls-test HTTP/2.0
-> Host: localhost:%s
-> Accept-Encoding: gzip
-> User-Agent: Go-http-client/2.0
-
-< HTTP/2.0 200 OK
-
-Hello, world!
-`, host, is.req.RemoteAddr, port)
+	want := fmt.Sprintf(golden(t.Name()), host, is.req.RemoteAddr, port)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}

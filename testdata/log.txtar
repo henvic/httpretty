@@ -1,0 +1,669 @@
+Golden files for the test cases.
+-- TestIncoming --
+* Request to http://%s/
+* Request from %s
+> GET / HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+
+Hello, world!
+-- TestIncomingBadJSON --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* body cannot be formatted: invalid character '}' looking for beginning of value
+{"bad": }
+-- TestIncomingBinaryBody --
+* Request to %s
+* Request from %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 14
+> Content-Type: image/webp
+> User-Agent: Go-http-client/1.1
+
+* body contains binary data
+< HTTP/1.1 200 OK
+
+* body contains binary data
+-- TestIncomingBinaryBodyNoMediatypeHeader --
+* Request to %s
+* Request from %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 14
+> User-Agent: Go-http-client/1.1
+
+* body contains binary data
+< HTTP/1.1 200 OK
+
+* body contains binary data
+-- TestIncomingBodyFilter --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+-- TestIncomingBodyFilterPanicked --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+* panic while filtering body: evil panic
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* panic while filtering body: evil panic
+{"result":"Hello, world!","number":3.14}
+-- TestIncomingBodyFilterSoftError --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+* error on request body filter: incomplete implementation
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* error on response body filter: incomplete implementation
+-- TestIncomingConcurrency --
+> GET / HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+
+Hello, world!
+-- TestIncomingFilterPanicked --
+* cannot filter request: GET /: panic: evil panic
+* Request to %v/
+* Request from %v
+> GET / HTTP/1.1
+> Host: %v
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+
+Hello, world!
+-- TestIncomingForm --
+* Request to %s
+* Request from %s
+> POST /form HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 32
+> User-Agent: Go-http-client/1.1
+
+email=root%%40example.com&foo=bar
+< HTTP/1.1 200 OK
+
+form received
+-- TestIncomingFormattedJSON --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+{
+    "result": "Hello, world!",
+    "number": 3.14
+}
+-- TestIncomingFormatterMatcherPanicked --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* panic while testing body format: evil matcher
+{"bad": }
+-- TestIncomingFormatterPanicked --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+
+* body cannot be formatted: panic: evil formatter
+{"bad": }
+-- TestIncomingLongRequest --
+* Request to %s
+* Request from %s
+> PUT /long-request HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 9846
+> User-Agent: Go-http-client/1.1
+
+%s
+< HTTP/1.1 200 OK
+
+long request received
+-- TestIncomingLongResponse --
+* Request to %s
+* Request from %s
+> GET /long-response HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+< Content-Length: 9846
+
+%s
+-- TestIncomingLongResponseHead --
+* Request to %s
+* Request from %s
+> HEAD /long-response HTTP/1.1
+> Host: %s
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+< Content-Length: 9846
+
+-- TestIncomingLongResponseUnknownLength --
+* Request to %s
+* Request from %s
+> GET /long-response HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+
+%s
+-- TestIncomingLongResponseUnknownLengthTooLong --
+* Request to %s
+* Request from %s
+> GET /long-response HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+
+* body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)
+-- TestIncomingMinimal --
+* Request to %s
+* Request from %s
+-- TestIncomingMultipartForm --
+* Request to %s
+* Request from %s
+> POST /multipart-upload HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Content-Length: 10355
+> Content-Type: %s
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+
+upload received
+-- TestIncomingMutualTLS --
+^\* Request to %s
+\* Request from %s
+\* TLS connection using TLS \d.\d / \w+
+\* ALPN: h2 accepted
+\* Client certificate:
+\*  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
+\*  start date: Sat Jan 25 20:12:36 UTC 2020
+\*  expire date: Mon Jan  1 20:12:36 UTC 2120
+\*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
+> GET /mutual-tls-test HTTP/2\.0
+> Host: localhost:%s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/2\.0
+
+< HTTP/2\.0 200 OK
+
+Hello, world!
+-- TestIncomingMutualTLSNoSafetyLogging --
+* Request to %s
+* Request from %s
+> GET /mutual-tls-test HTTP/2.0
+> Host: localhost:%s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/2.0
+
+< HTTP/2.0 200 OK
+
+Hello, world!
+-- TestIncomingNotFound --
+* Request to http://%s/
+* Request from %s
+> GET / HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 404 Not Found
+< Content-Type: text/plain; charset=utf-8
+< X-Content-Type-Options: nosniff
+
+-- TestIncomingSanitized --
+* Request to %s
+* Request from %s
+> GET /incoming HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Cookie: food=████████████████████
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+
+Hello, world!
+-- TestIncomingSkipHeader --
+* Request to %s
+* Request from %s
+> GET /json HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+
+< HTTP/1.1 200 OK
+
+{"result":"Hello, world!","number":3.14}
+-- TestIncomingTLS --
+^\* Request to https://example\.com/
+\* Request from %s
+\* TLS connection using TLS \d+\.\d+ / \w+
+> GET / HTTP/1\.1
+> Host: example\.com
+> Accept-Encoding: gzip
+> User-Agent: Robot/0\.1 crawler@example\.com
+
+< HTTP/1\.1 200 OK
+
+Hello, world!
+-- TestIncomingTooLongResponse --
+* Request to %s
+* Request from %s
+> GET /long-response HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> User-Agent: Go-http-client/1.1
+
+< HTTP/1.1 200 OK
+< Content-Length: 9846
+
+* body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)
+-- TestOutgoing --
+* Request to %s
+> GET / HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingBadJSON --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 9
+< Content-Type: application/json; charset=utf-8
+
+* body cannot be formatted: invalid character '}' looking for beginning of value
+{"bad": }
+-- TestOutgoingBinaryBody --
+* Request to %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Content-Length: 14
+> Content-Type: image/webp
+
+* body contains binary data
+< HTTP/1.1 200 OK
+< Content-Length: 16
+< Content-Type: application/pdf
+
+* body contains binary data
+-- TestOutgoingBinaryBodyNoMediatypeHeader --
+* Request to %s
+> POST /convert HTTP/1.1
+> Host: %s
+> Content-Length: 14
+
+* body contains binary data
+< HTTP/1.1 200 OK
+< Content-Length: 16
+
+* body contains binary data
+-- TestOutgoingBodyFilter --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 40
+< Content-Type: application/json; charset=utf-8
+
+-- TestOutgoingBodyFilterPanicked --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 40
+< Content-Type: application/json; charset=utf-8
+
+* panic while filtering body: evil panic
+{"result":"Hello, world!","number":3.14}
+-- TestOutgoingBodyFilterSoftError --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 40
+< Content-Type: application/json; charset=utf-8
+
+* error on response body filter: incomplete implementation
+-- TestOutgoingConcurrency --
+* Request to %s
+> GET / HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingFilterPanicked --
+* cannot filter request: GET %v: panic: evil panic
+* Request to %v
+> GET / HTTP/1.1
+> Host: %v
+
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingForm --
+* Request to %s
+> POST /form HTTP/1.1
+> Host: %s
+> Content-Length: 32
+
+email=root%%40example.com&foo=bar
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+form received
+-- TestOutgoingFormattedJSON --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 40
+< Content-Type: application/json; charset=utf-8
+
+{
+    "result": "Hello, world!",
+    "number": 3.14
+}
+-- TestOutgoingFormatterMatcherPanicked --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 9
+< Content-Type: application/json; charset=utf-8
+
+* panic while testing body format: evil matcher
+{"bad": }
+-- TestOutgoingFormatterPanicked --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 9
+< Content-Type: application/json; charset=utf-8
+
+* body cannot be formatted: panic: evil formatter
+{"bad": }
+-- TestOutgoingHTTP2MutualTLS --
+^\* Request to %s
+\* Client certificate:
+\*  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
+\*  start date: Sat Jan 25 20:12:36 UTC 2020
+\*  expire date: Mon Jan  1 20:12:36 UTC 2120
+\*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
+> GET /mutual-tls-test HTTP/1\.1
+> Host: localhost:%s
+
+\* TLS connection using TLS \d+\.\d+ / \w+
+\* ALPN: h2 accepted
+\* Server certificate:
+\*  subject: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
+\*  start date: Wed Aug 12 22:20:45 UTC 2020
+\*  expire date: Fri Jul 19 22:20:45 UTC 2120
+\*  issuer: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
+\*  TLS certificate verify ok\.
+< HTTP/2\.0 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingHTTP2MutualTLSNoSafetyLogging --
+* Request to %s
+> GET /mutual-tls-test HTTP/1.1
+> Host: localhost:%s
+
+< HTTP/2.0 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingLongRequest --
+* Request to %s
+> PUT /long-request HTTP/1.1
+> Host: %s
+> Content-Length: 9846
+
+%s
+< HTTP/1.1 200 OK
+< Content-Length: 21
+< Content-Type: text/plain; charset=utf-8
+
+long request received
+-- TestOutgoingLongResponse --
+* Request to %s
+> GET /long-response HTTP/1.1
+> Host: %s
+
+< HTTP/1.1 200 OK
+< Content-Length: 9846
+< Content-Type: text/plain; charset=utf-8
+
+%s
+-- TestOutgoingLongResponseHead --
+* Request to %s
+> HEAD /long-response HTTP/1.1
+> Host: %s
+
+< HTTP/1.1 200 OK
+< Content-Length: 9846
+
+-- TestOutgoingLongResponseUnknownLength --
+* Request to %s
+> GET /long-response HTTP/1.1
+> Host: %s
+
+< HTTP/1.1 200 OK
+< Content-Type: text/plain; charset=utf-8
+
+%s
+-- TestOutgoingLongResponseUnknownLengthTooLong --
+* Request to %s
+> GET /long-response HTTP/1.1
+> Host: %s
+
+< HTTP/1.1 200 OK
+< Content-Type: text/plain; charset=utf-8
+
+* body is too long, skipping (contains more than 4096 bytes)
+-- TestOutgoingMultipartForm --
+* Request to %s
+> POST /multipart-upload HTTP/1.1
+> Host: %s
+> Content-Length: 10355
+> Content-Type: %s
+
+< HTTP/1.1 200 OK
+< Content-Length: 15
+< Content-Type: text/plain; charset=utf-8
+
+upload received
+-- TestOutgoingSanitized --
+* Request to %s
+> GET / HTTP/1.1
+> Host: %s
+> Cookie: food=████████████████████
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingSkipHeader --
+* Request to %s
+> GET /json HTTP/1.1
+> Host: %s
+
+< HTTP/1.1 200 OK
+< Content-Length: 40
+
+{"result":"Hello, world!","number":3.14}
+-- TestOutgoingSkipSanitize --
+* Request to %s
+> GET / HTTP/1.1
+> Host: %s
+> Cookie: food=sorbet
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingTLS --
+^\* Request to %s
+> GET / HTTP/1\.1
+> Host: example\.com
+> User-Agent: Robot/0\.1 crawler@example\.com
+
+\* TLS connection using TLS \d+\.\d+ / \w+
+\* Server certificate:
+\*  subject: O=Acme Co
+\*  start date: Thu Jan  1 00:00:00 UTC 1970
+\*  expire date: Sat Jan 29 16:00:00 UTC 2084
+\*  issuer: O=Acme Co
+\*  TLS certificate verify ok\.
+< HTTP/1\.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingTLSBadClientCertificate --
+* Request to %s
+* Client certificate:
+*  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
+*  start date: Sat Jan 25 20:12:36 UTC 2020
+*  expire date: Mon Jan  1 20:12:36 UTC 2120
+*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
+> GET / HTTP/1.1
+> Host: example.com
+> User-Agent: Robot/0.1 crawler@example.com
+
+* remote error: tls: bad certificate
+-- TestOutgoingTLSInsecureSkipVerify --
+^\* Request to %s
+\* Skipping TLS verification: connection is susceptible to man-in-the-middle attacks\.
+> GET / HTTP/1\.1
+> Host: example\.com
+> User-Agent: Robot/0\.1 crawler@example\.com
+
+\* TLS connection using TLS \d+\.\d+ / \w+ \(insecure=true\)
+\* Server certificate:
+\*  subject: O=Acme Co
+\*  start date: Thu Jan  1 00:00:00 UTC 1970
+\*  expire date: Sat Jan 29 16:00:00 UTC 2084
+\*  issuer: O=Acme Co
+\*  TLS certificate verify ok\.
+< HTTP/1\.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
+-- TestOutgoingTLSInvalidCertificate --
+^\* Request to %s
+> GET / HTTP/1\.1
+> Host: example\.com
+> User-Agent: Robot/0\.1 crawler@example\.com
+
+\* x509: .+
+-- TestOutgoingTooLongResponse --
+* Request to %s
+> GET /long-response HTTP/1.1
+> Host: %s
+
+< HTTP/1.1 200 OK
+< Content-Length: 9846
+< Content-Type: text/plain; charset=utf-8
+
+* body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)

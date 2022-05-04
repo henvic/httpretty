@@ -2,6 +2,7 @@ package httpretty
 
 import (
 	"bytes"
+	_ "embed"
 	"io"
 	"io/ioutil"
 	"net"
@@ -19,6 +20,10 @@ import (
 // See race_test.go.
 // See https://golang.org/issue/30597
 var race bool
+
+//go:embed testdata/petition.golden
+// sample from http://bastiat.org/fr/petition.html
+var petition string
 
 func TestPrintRequest(t *testing.T) {
 	t.Parallel()

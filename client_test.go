@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,10 +19,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/tools/txtar"
 )
 
 type helloHandler struct{}
@@ -29,6 +33,21 @@ type helloHandler struct{}
 func (h helloHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header()["Date"] = nil
 	fmt.Fprintf(w, "Hello, world!")
+}
+
+var (
+	//go:embed testdata/log.txtar
+	dump  []byte
+	dumpA = txtar.Parse(dump)
+)
+
+func golden(name string) string {
+	for _, f := range dumpA.Files {
+		if name == f.Name {
+			return string(f.Data)
+		}
+	}
+	panic("golden file not found")
 }
 
 func TestOutgoing(t *testing.T) {
@@ -85,18 +104,7 @@ func TestOutgoing(t *testing.T) {
 	}
 
 	// see preceding deferred function, where want is used.
-	want = fmt.Sprintf(`* Request to %s
-> GET / HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, ts.URL, ts.Listener.Addr())
-
+	want = fmt.Sprintf(golden(t.Name()), ts.URL, ts.Listener.Addr())
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
@@ -143,24 +151,12 @@ func TestOutgoingConcurrency(t *testing.T) {
 		go outgoingGet(t, client, ts, wg.Done)
 		time.Sleep(time.Millisecond) // let's slow down just a little bit ("too many files descriptors open" on a slow machine, more realistic traffic, and so on)
 	}
-
 	wg.Wait()
 	got := buf.String()
-	gotConcurrency := strings.Count(got, "< HTTP/1.1 200 OK")
-	if concurrency != gotConcurrency {
+	if gotConcurrency := strings.Count(got, "< HTTP/1.1 200 OK"); concurrency != gotConcurrency {
 		t.Errorf("logged %d requests, wanted %d", concurrency, gotConcurrency)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET / HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!`, ts.URL, ts.Listener.Addr())
-	if !strings.Contains(got, want) {
+	if want := fmt.Sprintf(golden(t.Name()), ts.URL, ts.Listener.Addr()); !strings.Contains(got, want) {
 		t.Errorf("Request doesn't contain expected body")
 	}
 }
@@ -224,18 +220,7 @@ func TestOutgoingSanitized(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET / HTTP/1.1
-> Host: %s
-> Cookie: food=████████████████████
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, ts.URL, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -271,18 +256,7 @@ func TestOutgoingSkipSanitize(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET / HTTP/1.1
-> Host: %s
-> Cookie: food=sorbet
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, ts.URL, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -399,18 +373,7 @@ func TestOutgoingFilterPanicked(t *testing.T) {
 	if _, err := client.Get(ts.URL); err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
-
-	want := fmt.Sprintf(`* cannot filter request: GET %v: panic: evil panic
-* Request to %v
-> GET / HTTP/1.1
-> Host: %v
-
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, ts.URL, ts.URL, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, ts.URL, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf(`expected input to contain "%v", got %v instead`, want, got)
 	}
@@ -438,7 +401,6 @@ func TestOutgoingSkipHeader(t *testing.T) {
 	}
 
 	uri := fmt.Sprintf("%s/json", ts.URL)
-
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
@@ -447,15 +409,7 @@ func TestOutgoingSkipHeader(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-
-< HTTP/1.1 200 OK
-< Content-Length: 40
-
-{"result":"Hello, world!","number":3.14}
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -491,16 +445,7 @@ func TestOutgoingBodyFilter(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 40
-< Content-Type: application/json; charset=utf-8
-
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -536,17 +481,7 @@ func TestOutgoingBodyFilterSoftError(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 40
-< Content-Type: application/json; charset=utf-8
-
-* error on response body filter: incomplete implementation
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -581,18 +516,7 @@ func TestOutgoingBodyFilterPanicked(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 40
-< Content-Type: application/json; charset=utf-8
-
-* panic while filtering body: evil panic
-{"result":"Hello, world!","number":3.14}
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -683,20 +607,7 @@ func TestOutgoingFormattedJSON(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 40
-< Content-Type: application/json; charset=utf-8
-
-{
-    "result": "Hello, world!",
-    "number": 3.14
-}
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -739,18 +650,7 @@ func TestOutgoingBadJSON(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 9
-< Content-Type: application/json; charset=utf-8
-
-* body cannot be formatted: invalid character '}' looking for beginning of value
-{"bad": }
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -795,18 +695,7 @@ func TestOutgoingFormatterPanicked(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 9
-< Content-Type: application/json; charset=utf-8
-
-* body cannot be formatted: panic: evil formatter
-{"bad": }
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -851,18 +740,7 @@ func TestOutgoingFormatterMatcherPanicked(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /json HTTP/1.1
-> Host: %s
-> User-Agent: Robot/0.1 crawler@example.com
-
-< HTTP/1.1 200 OK
-< Content-Length: 9
-< Content-Type: application/json; charset=utf-8
-
-* panic while testing body format: evil matcher
-{"bad": }
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -906,18 +784,7 @@ func TestOutgoingForm(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> POST /form HTTP/1.1
-> Host: %s
-> Content-Length: 32
-
-email=root%%40example.com&foo=bar
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-form received
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -953,19 +820,7 @@ func TestOutgoingBinaryBody(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> POST /convert HTTP/1.1
-> Host: %s
-> Content-Length: 14
-> Content-Type: image/webp
-
-* body contains binary data
-< HTTP/1.1 200 OK
-< Content-Length: 16
-< Content-Type: application/pdf
-
-* body contains binary data
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1002,17 +857,7 @@ func TestOutgoingBinaryBodyNoMediatypeHeader(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> POST /convert HTTP/1.1
-> Host: %s
-> Content-Length: 14
-
-* body contains binary data
-< HTTP/1.1 200 OK
-< Content-Length: 16
-
-* body contains binary data
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1053,18 +898,7 @@ func TestOutgoingLongRequest(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> PUT /long-request HTTP/1.1
-> Host: %s
-> Content-Length: 9846
-
-%s
-< HTTP/1.1 200 OK
-< Content-Length: 21
-< Content-Type: text/plain; charset=utf-8
-
-long request received
-`, uri, ts.Listener.Addr(), petition)
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr(), petition)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1107,16 +941,7 @@ func TestOutgoingLongResponse(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /long-response HTTP/1.1
-> Host: %s
-
-< HTTP/1.1 200 OK
-< Content-Length: 9846
-< Content-Type: text/plain; charset=utf-8
-
-%s
-`, uri, ts.Listener.Addr(), petition)
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr(), petition)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1149,14 +974,7 @@ func TestOutgoingLongResponseHead(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> HEAD /long-response HTTP/1.1
-> Host: %s
-
-< HTTP/1.1 200 OK
-< Content-Length: 9846
-
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1189,16 +1007,7 @@ func TestOutgoingTooLongResponse(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET /long-response HTTP/1.1
-> Host: %s
-
-< HTTP/1.1 200 OK
-< Content-Length: 9846
-< Content-Type: text/plain; charset=utf-8
-
-* body is too long (9846 bytes) to print, skipping (longer than 5000 bytes)
-`, uri, ts.Listener.Addr())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1224,6 +1033,7 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 		{name: "long", repeat: 100},
 	}
 
+	want := golden(t.Name())
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ts := httptest.NewServer(&longResponseUnknownLengthHandler{tc.repeat})
@@ -1251,15 +1061,7 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
 			repeatedBody := strings.Repeat(petition, tc.repeat+1)
-			want := fmt.Sprintf(`* Request to %s
-> GET /long-response HTTP/1.1
-> Host: %s
-
-< HTTP/1.1 200 OK
-< Content-Type: text/plain; charset=utf-8
-
-%s
-`, uri, ts.Listener.Addr(), repeatedBody)
+			want := fmt.Sprintf(want, uri, ts.Listener.Addr(), repeatedBody)
 			if got := buf.String(); got != want {
 				t.Errorf("logged HTTP request %s; want %s", got, want)
 			}
@@ -1278,6 +1080,7 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 		{name: "long", repeat: 100},
 	}
 
+	want := golden(t.Name())
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ts := httptest.NewServer(&longResponseUnknownLengthHandler{tc.repeat})
@@ -1303,15 +1106,7 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 			if err != nil {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
-			want := fmt.Sprintf(`* Request to %s
-> GET /long-response HTTP/1.1
-> Host: %s
-
-< HTTP/1.1 200 OK
-< Content-Type: text/plain; charset=utf-8
-
-* body is too long, skipping (contains more than 4096 bytes)
-`, uri, ts.Listener.Addr())
+			want := fmt.Sprintf(want, uri, ts.Listener.Addr())
 			if got := buf.String(); got != want {
 				t.Errorf("logged HTTP request %s; want %s", got, want)
 			}
@@ -1356,24 +1151,19 @@ func (h multipartHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(1000); err != nil {
 		t.Errorf("cannot parse multipart form at server-side: %v", err)
 	}
-	wantAuthor := "Frédéric Bastiat"
-	wantTitle := "Candlemakers' Petition"
-	wantFilename := "petition"
-	gotAuthor := r.Form.Get("author")
-	gotTitle := r.Form.Get("title")
-	if gotAuthor != wantAuthor {
-		t.Errorf("got author %s, wanted %s", gotAuthor, wantAuthor)
+	if want, got := "Frédéric Bastiat", r.Form.Get("author"); want != got {
+		t.Errorf("got author %s, wanted %s", got, want)
 	}
-	if gotTitle != wantTitle {
-		t.Errorf("got author %s, wanted %s", gotTitle, wantTitle)
+	if want, got := "Candlemakers' Petition", r.Form.Get("title"); want != got {
+		t.Errorf("got title %s, wanted %s", got, want)
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		t.Errorf("server cannot read file form sent over multipart: %v", err)
 	}
-	if header.Filename != wantFilename {
-		t.Errorf("got filename %s, wanted %s", header.Filename, wantFilename)
+	if want, got := "petition", header.Filename; want != got {
+		t.Errorf("got filename %s, wanted %s", header.Filename, want)
 	}
 	if header.Size != int64(len(petition)) {
 		t.Errorf("got size %d, wanted %d", header.Size, len(petition))
@@ -1421,18 +1211,7 @@ func TestOutgoingMultipartForm(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> POST /multipart-upload HTTP/1.1
-> Host: %s
-> Content-Length: 10355
-> Content-Type: %s
-
-< HTTP/1.1 200 OK
-< Content-Length: 15
-< Content-Type: text/plain; charset=utf-8
-
-upload received
-`, uri, ts.Listener.Addr(), writer.FormDataContentType())
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr(), writer.FormDataContentType())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1465,25 +1244,8 @@ func TestOutgoingTLS(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET / HTTP/1.1
-> Host: example.com
-> User-Agent: Robot/0.1 crawler@example.com
-
-* TLS connection using TLS 1.3 / TLS_AES_128_GCM_SHA256
-* Server certificate:
-*  subject: O=Acme Co
-*  start date: Thu Jan  1 00:00:00 UTC 1970
-*  expire date: Sat Jan 29 16:00:00 UTC 2084
-*  issuer: O=Acme Co
-*  TLS certificate verify ok.
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, ts.URL)
-	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
+	want := fmt.Sprintf(golden(t.Name()), ts.URL)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 	testBody(t, resp.Body, []byte("Hello, world!"))
@@ -1518,29 +1280,8 @@ func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-* Skipping TLS verification: connection is susceptible to man-in-the-middle attacks.
-> GET / HTTP/1.1
-> Host: example.com
-> User-Agent: Robot/0.1 crawler@example.com
-
-* TLS connection using TLS 1.3 / TLS_AES_128_GCM_SHA256 (insecure=true)
-* Server certificate:
-*  subject: O=Acme Co
-*  start date: Thu Jan  1 00:00:00 UTC 1970
-*  expire date: Sat Jan 29 16:00:00 UTC 2084
-*  issuer: O=Acme Co
-*  TLS certificate verify ok.
-< HTTP/1.1 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, ts.URL)
-
-	got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1)
-
-	if got != want {
+	want := fmt.Sprintf(golden(t.Name()), ts.URL)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 	testBody(t, resp.Body, []byte("Hello, world!"))
@@ -1574,14 +1315,8 @@ func TestOutgoingTLSInvalidCertificate(t *testing.T) {
 	if _, err = client.Do(req); err == nil || !strings.Contains(err.Error(), "x509") {
 		t.Errorf("cannot connect to the server has unexpected error: %v", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-> GET / HTTP/1.1
-> Host: example.com
-> User-Agent: Robot/0.1 crawler@example.com
-
-* x509: certificate signed by unknown authority
-`, ts.URL)
-	if got := buf.String(); got != want {
+	want := fmt.Sprintf(golden(t.Name()), ts.URL)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
@@ -1629,18 +1364,7 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 	if _, err = client.Do(req); err == nil || !strings.Contains(err.Error(), "bad certificate") {
 		t.Errorf("got: %v, expected bad certificate error message", err)
 	}
-	want := fmt.Sprintf(`* Request to %s
-* Client certificate:
-*  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-*  start date: Sat Jan 25 20:12:36 UTC 2020
-*  expire date: Mon Jan  1 20:12:36 UTC 2120
-*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-> GET / HTTP/1.1
-> Host: example.com
-> User-Agent: Robot/0.1 crawler@example.com
-
-* remote error: tls: bad certificate
-`, ts.URL)
+	want := fmt.Sprintf(golden(t.Name()), ts.URL)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
@@ -1737,30 +1461,8 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 		t.Errorf("cannot create request: %v", err)
 	}
 	testBody(t, resp.Body, []byte("Hello, world!"))
-	want := fmt.Sprintf(`* Request to %s
-* Client certificate:
-*  subject: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-*  start date: Sat Jan 25 20:12:36 UTC 2020
-*  expire date: Mon Jan  1 20:12:36 UTC 2120
-*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-> GET /mutual-tls-test HTTP/1.1
-> Host: localhost:%s
-
-* TLS connection using TLS 1.3 / TLS_AES_128_GCM_SHA256
-* ALPN: h2 accepted
-* Server certificate:
-*  subject: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
-*  start date: Wed Aug 12 22:20:45 UTC 2020
-*  expire date: Fri Jul 19 22:20:45 UTC 2120
-*  issuer: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
-*  TLS certificate verify ok.
-< HTTP/2.0 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, host, port)
-	if got := strings.Replace(buf.String(), "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256", -1); got != want {
+	want := fmt.Sprintf(golden(t.Name()), host, port)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
@@ -1855,16 +1557,7 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 		t.Errorf("cannot create request: %v", err)
 	}
 	testBody(t, resp.Body, []byte("Hello, world!"))
-	want := fmt.Sprintf(`* Request to %s
-> GET /mutual-tls-test HTTP/1.1
-> Host: localhost:%s
-
-< HTTP/2.0 200 OK
-< Content-Length: 13
-< Content-Type: text/plain; charset=utf-8
-
-Hello, world!
-`, host, port)
+	want := fmt.Sprintf(golden(t.Name()), host, port)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
