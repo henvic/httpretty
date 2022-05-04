@@ -378,7 +378,7 @@ type JSONFormatter struct{}
 
 // Match JSON media type.
 func (j *JSONFormatter) Match(mediatype string) bool {
-	return mediatype == "application/json"
+	return mediatype == "application/json" || mediatype == "application/vnd.api+json"
 }
 
 // Format JSON content.

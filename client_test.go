@@ -562,7 +562,11 @@ type jsonHandler struct{}
 
 func (h jsonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header()["Date"] = nil
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if r.URL.Path == "/vnd" {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+	} else {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	}
 	type res struct {
 		Result string      `json:"result"`
 		Number json.Number `json:"number"`
@@ -598,18 +602,36 @@ func TestOutgoingFormattedJSON(t *testing.T) {
 		Transport: logger.RoundTripper(newTransport()),
 	}
 
-	uri := fmt.Sprintf("%s/json", ts.URL)
-	req, err := http.NewRequest(http.MethodGet, uri, nil)
-	if err != nil {
-		t.Errorf("cannot create request: %v", err)
+	testCases := []struct {
+		name        string
+		contentType string
+	}{
+		{
+			name:        "json",
+			contentType: "application/json",
+		},
+		{
+			name:        "vnd",
+			contentType: "application/vnd.api+json",
+		},
 	}
-	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-	if _, err = client.Do(req); err != nil {
-		t.Errorf("cannot connect to the server: %v", err)
-	}
-	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
-	if got := buf.String(); got != want {
-		t.Errorf("logged HTTP request %s; want %s", got, want)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf.Reset()
+			uri := fmt.Sprintf("%s/%s", ts.URL, tc.name)
+			req, err := http.NewRequest(http.MethodGet, uri, nil)
+			if err != nil {
+				t.Errorf("cannot create request: %v", err)
+			}
+			req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+			if _, err = client.Do(req); err != nil {
+				t.Errorf("cannot connect to the server: %v", err)
+			}
+			want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
+			if got := buf.String(); got != want {
+				t.Errorf("logged HTTP request %s; want %s", got, want)
+			}
+		})
 	}
 }
 

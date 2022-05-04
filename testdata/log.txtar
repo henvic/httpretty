@@ -437,7 +437,7 @@ email=root%%40example.com&foo=bar
 < Content-Type: text/plain; charset=utf-8
 
 form received
--- TestOutgoingFormattedJSON --
+-- TestOutgoingFormattedJSON/json --
 * Request to %s
 > GET /json HTTP/1.1
 > Host: %s
@@ -446,6 +446,20 @@ form received
 < HTTP/1.1 200 OK
 < Content-Length: 40
 < Content-Type: application/json; charset=utf-8
+
+{
+    "result": "Hello, world!",
+    "number": 3.14
+}
+-- TestOutgoingFormattedJSON/vnd --
+* Request to %s
+> GET /vnd HTTP/1.1
+> Host: %s
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+< Content-Length: 40
+< Content-Type: application/vnd.api+json
 
 {
     "result": "Hello, world!",
