@@ -1,7 +1,6 @@
 package httpretty
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
@@ -265,12 +264,11 @@ func isBinaryMediatype(mediatype string) bool {
 const maxDefaultUnknownReadable = 4096 // bytes
 
 func (p *printer) printBodyUnknownLength(contentType string, maxLength int64, r io.ReadCloser) (newBody io.ReadCloser) {
-	shortReader := bufio.NewReader(r)
 	if maxLength == 0 {
 		maxLength = maxDefaultUnknownReadable
 	}
 	pb := make([]byte, maxLength+1) // read one extra bit to assure the length is longer than acceptable
-	n, err := io.ReadFull(shortReader, pb)
+	n, err := io.ReadFull(r, pb)
 	pb = pb[0:n] // trim any nil symbols left after writing in the byte slice.
 	buf := bytes.NewReader(pb)
 	newBody = newBodyReaderBuf(buf, r)

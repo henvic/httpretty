@@ -1097,9 +1097,11 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 	testCases := []struct {
 		name   string
 		repeat int
+		max    int64
 	}{
-		{name: "short", repeat: 1},
-		{name: "long", repeat: 100},
+		{name: "short", repeat: 1, max: 4096},
+		{name: "long", repeat: 100, max: 4096},
+		{name: "long 1kb", repeat: 100, max: 1000},
 	}
 
 	want := golden(t.Name())
@@ -1108,10 +1110,11 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 			ts := httptest.NewServer(&longResponseUnknownLengthHandler{tc.repeat})
 			defer ts.Close()
 			logger := &Logger{
-				RequestHeader:  true,
-				RequestBody:    true,
-				ResponseHeader: true,
-				ResponseBody:   true,
+				RequestHeader:   true,
+				RequestBody:     true,
+				ResponseHeader:  true,
+				ResponseBody:    true,
+				MaxResponseBody: tc.max,
 			}
 			var buf bytes.Buffer
 			logger.SetOutput(&buf)
@@ -1129,6 +1132,7 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
 			want := fmt.Sprintf(want, uri, ts.Listener.Addr())
+			want = strings.Replace(want, "(contains more than 4096 bytes)", fmt.Sprintf("(contains more than %d bytes)", logger.MaxResponseBody), 1)
 			if got := buf.String(); got != want {
 				t.Errorf("logged HTTP request %s; want %s", got, want)
 			}

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -21,8 +20,9 @@ import (
 // See https://golang.org/issue/30597
 var race bool
 
-//go:embed testdata/petition.golden
 // sample from http://bastiat.org/fr/petition.html
+//
+//go:embed testdata/petition.golden
 var petition string
 
 func TestPrintRequest(t *testing.T) {
@@ -223,8 +223,12 @@ func testBody(t *testing.T, r io.Reader, want []byte) {
 	if err != nil {
 		t.Errorf("expected no error reading response body, got %v instead", err)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf(`got body = %v, wanted %v`, string(got), string(want))
+	if !bytes.Equal(got, want) {
+		if len(got) != len(want) && (len(got) > 100 || len(want) > 100) {
+			t.Errorf(`got body length = %v, wanted %v`, len(got), len(want))
+		} else {
+			t.Errorf(`got body = %v, wanted %v`, string(got), string(want))
+		}
 	}
 }
 
