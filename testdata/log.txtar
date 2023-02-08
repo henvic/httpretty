@@ -670,7 +670,7 @@ Hello, world!
 > Host: example\.com
 > User-Agent: Robot/0\.1 crawler@example\.com
 
-\* x509: .+
+\* .*x509: .+
 -- TestOutgoingTooLongResponse --
 * Request to %s
 > GET /long-response HTTP/1.1
