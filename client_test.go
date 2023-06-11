@@ -102,6 +102,7 @@ func TestOutgoing(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 
 	// see preceding deferred function, where want is used.
 	want = fmt.Sprintf(golden(t.Name()), ts.URL, ts.Listener.Addr())
@@ -119,6 +120,7 @@ func outgoingGet(t *testing.T, client *http.Client, ts *httptest.Server, done fu
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
@@ -963,6 +965,7 @@ func TestOutgoingLongResponse(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr(), petition)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -996,6 +999,7 @@ func TestOutgoingLongResponseHead(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -1029,6 +1033,7 @@ func TestOutgoingTooLongResponse(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -1082,6 +1087,7 @@ func TestOutgoingLongResponseUnknownLength(t *testing.T) {
 			if err != nil {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
+			defer resp.Body.Close()
 			repeatedBody := strings.Repeat(petition, tc.repeat+1)
 			want := fmt.Sprintf(want, uri, ts.Listener.Addr(), repeatedBody)
 			if got := buf.String(); got != want {
@@ -1131,6 +1137,7 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 			if err != nil {
 				t.Errorf("cannot connect to the server: %v", err)
 			}
+			defer resp.Body.Close()
 			want := fmt.Sprintf(want, uri, ts.Listener.Addr())
 			want = strings.Replace(want, "(contains more than 4096 bytes)", fmt.Sprintf("(contains more than %d bytes)", logger.MaxResponseBody), 1)
 			if got := buf.String(); got != want {
@@ -1270,6 +1277,7 @@ func TestOutgoingTLS(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 	want := fmt.Sprintf(golden(t.Name()), ts.URL)
 	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -1306,6 +1314,7 @@ func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	defer resp.Body.Close()
 	want := fmt.Sprintf(golden(t.Name()), ts.URL)
 	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
@@ -1486,6 +1495,7 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
+	defer resp.Body.Close()
 	testBody(t, resp.Body, []byte("Hello, world!"))
 	want := fmt.Sprintf(golden(t.Name()), host, port)
 	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
@@ -1582,6 +1592,7 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
 	}
+	defer resp.Body.Close()
 	testBody(t, resp.Body, []byte("Hello, world!"))
 	want := fmt.Sprintf(golden(t.Name()), host, port)
 	if got := buf.String(); got != want {
