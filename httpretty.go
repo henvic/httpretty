@@ -5,49 +5,51 @@
 // DumpRequest, DumpRequestOut, and DumpResponse heavy debugging functions.
 //
 // You can use the logger quickly to log requests you are opening. For example:
-// 	package main
 //
-// 	import (
-// 		"fmt"
-// 		"net/http"
-// 		"os"
+//	package main
 //
-// 		"github.com/henvic/httpretty"
-// 	)
+//	import (
+//		"fmt"
+//		"net/http"
+//		"os"
 //
-// 	func main() {
-// 		logger := &httpretty.Logger{
-// 			Time:           true,
-// 			TLS:            true,
-// 			RequestHeader:  true,
-// 			RequestBody:    true,
-// 			ResponseHeader: true,
-// 			ResponseBody:   true,
-// 			Colors:         true,
-// 			Formatters:     []httpretty.Formatter{&httpretty.JSONFormatter{}},
-// 		}
+//		"github.com/henvic/httpretty"
+//	)
 //
-// 		http.DefaultClient.Transport = logger.RoundTripper(http.DefaultClient.Transport) // tip: you can use it on any *http.Client
+//	func main() {
+//		logger := &httpretty.Logger{
+//			Time:           true,
+//			TLS:            true,
+//			RequestHeader:  true,
+//			RequestBody:    true,
+//			ResponseHeader: true,
+//			ResponseBody:   true,
+//			Colors:         true,
+//			Formatters:     []httpretty.Formatter{&httpretty.JSONFormatter{}},
+//		}
 //
-// 		if _, err := http.Get("https://www.google.com/"); err != nil {
-// 			fmt.Fprintf(os.Stderr, "%+v\n", err)
-// 			os.Exit(1)
-// 		}
-// 	}
+//		http.DefaultClient.Transport = logger.RoundTripper(http.DefaultClient.Transport) // tip: you can use it on any *http.Client
+//
+//		if _, err := http.Get("https://www.google.com/"); err != nil {
+//			fmt.Fprintf(os.Stderr, "%+v\n", err)
+//			os.Exit(1)
+//		}
+//	}
 //
 // If you pass nil to the logger.RoundTripper it is going to fallback to http.DefaultTransport.
 //
 // You can use the logger quickly to log requests on your server. For example:
-// 	logger := &httpretty.Logger{
-// 		Time:           true,
-// 		TLS:            true,
-// 		RequestHeader:  true,
-// 		RequestBody:    true,
-// 		ResponseHeader: true,
-// 		ResponseBody:   true,
-// 	}
 //
-// 	logger.Middleware(handler)
+//	logger := &httpretty.Logger{
+//		Time:           true,
+//		TLS:            true,
+//		RequestHeader:  true,
+//		RequestBody:    true,
+//		ResponseHeader: true,
+//		ResponseBody:   true,
+//	}
+//
+//	logger.Middleware(handler)
 //
 // Note: server logs don't include response headers set by the server.
 // Client logs don't include request headers set by the HTTP client.
