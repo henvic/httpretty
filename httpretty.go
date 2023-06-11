@@ -65,6 +65,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"regexp"
 	"sync"
 
 	"github.com/henvic/httpretty/internal/color"
@@ -378,9 +379,15 @@ func (l *Logger) PrintResponse(resp *http.Response) {
 // your own formatter using it or anything else. See Formatter.
 type JSONFormatter struct{}
 
+// jsonTypeRE can be used to identify JSON media types, such as
+// application/json or application/vnd.api+json.
+//
+// Source: https://github.com/cli/cli/blob/63a4319f6caedccbadf1bf0317d70b6f0cb1b5b9/internal/authflow/flow.go#L27
+var jsonTypeRE = regexp.MustCompile(`[/+]json($|;)`)
+
 // Match JSON media type.
 func (j *JSONFormatter) Match(mediatype string) bool {
-	return mediatype == "application/json" || mediatype == "application/vnd.api+json"
+	return jsonTypeRE.MatchString(mediatype)
 }
 
 // Format JSON content.
