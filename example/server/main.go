@@ -21,6 +21,7 @@ func main() {
 
 	addr := ":8090"
 	fmt.Printf("Open http://localhost%s in the browser.\n", addr)
+	/* #nosec G114 Ignore timeout */
 	if err := http.ListenAndServe(addr, logger.Middleware(helloHandler{})); err != http.ErrServerClosed {
 		fmt.Fprintln(os.Stderr, err)
 	}
