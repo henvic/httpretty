@@ -283,7 +283,16 @@ func (r roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err err
 	if !l.SkipRequestInfo {
 		p.printRequestInfo(req)
 	}
-	if transport, ok := tripper.(*http.Transport); ok && transport.TLSClientConfig != nil {
+	// Try to get some information from transport
+	transport, ok := tripper.(*http.Transport)
+	// If proxy is used, then print information about proxy server
+	if ok && transport.Proxy != nil {
+		proxyUrl, err := transport.Proxy(req)
+		if proxyUrl != nil && err == nil {
+			p.printf("* Using proxy: %s\n", p.format(color.FgBlue, proxyUrl.String()))
+		}
+	}
+	if ok && transport.TLSClientConfig != nil {
 		tlsClientConfig = transport.TLSClientConfig
 		if tlsClientConfig.InsecureSkipVerify {
 			p.printf("* Skipping TLS verification: %s\n",
