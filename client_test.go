@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"regexp"
@@ -1248,6 +1249,57 @@ func TestOutgoingMultipartForm(t *testing.T) {
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
+}
+
+func TestOutgoingProxy(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(&helloHandler{})
+	defer ts.Close()
+
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, err := url.Parse(ts.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Header()["Date"] = nil
+		httputil.NewSingleHostReverseProxy(u).ServeHTTP(w, r)
+	}))
+	defer proxyServer.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := ts.Client()
+	transport := client.Transport.(*http.Transport)
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Errorf("cannot parse proxy URL: %v", err)
+
+	}
+	transport.Proxy = http.ProxyURL(proxyURL)
+	client.Transport = logger.RoundTripper(transport)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	req.Host = "example.com" // overriding the Host header to send
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, proxyServer.URL)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
 func TestOutgoingTLS(t *testing.T) {
