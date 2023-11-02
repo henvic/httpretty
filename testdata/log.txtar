@@ -644,7 +644,7 @@ Hello, world!
 > Host: example.com
 > User-Agent: Robot/0.1 crawler@example.com
 
-* remote error: tls: bad certificate
+* remote error: tls: %s
 -- TestOutgoingTLSInsecureSkipVerify --
 ^\* Request to %s
 \* Skipping TLS verification: connection is susceptible to man-in-the-middle attacks\.

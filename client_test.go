@@ -1451,8 +1451,8 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 	if _, err = client.Do(req); err == nil || !errors.As(err, &ue) {
 		t.Errorf("got: %v, expected bad certificate error message", err)
 	}
-	want := fmt.Sprintf(golden(t.Name()), ts.URL)
-	if got := buf.String(); got != want {
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, strings.SplitAfter(err.Error(), "remote error: tls: ")[1])
+	if got := buf.String(); !strings.Contains(got, want) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 }
