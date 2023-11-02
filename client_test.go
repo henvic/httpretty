@@ -1447,7 +1447,8 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 	}
 	req.Host = "example.com" // overriding the Host header to send
 	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
-	if _, err = client.Do(req); err == nil || !strings.Contains(err.Error(), "bad certificate") {
+	var ue = &url.Error{}
+	if _, err = client.Do(req); err == nil || !errors.As(err, &ue) {
 		t.Errorf("got: %v, expected bad certificate error message", err)
 	}
 	want := fmt.Sprintf(golden(t.Name()), ts.URL)
