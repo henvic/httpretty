@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"net"
 	"net/http"
@@ -196,7 +195,7 @@ func (p *printer) printResponseBodyOut(resp *http.Response) {
 	tee := io.TeeReader(resp.Body, &buf)
 	defer resp.Body.Close()
 	defer func() {
-		resp.Body = ioutil.NopCloser(&buf)
+		resp.Body = io.NopCloser(&buf)
 	}()
 	p.printBodyReader(contentType, tee)
 }
@@ -431,7 +430,7 @@ func (p *printer) printResponseHeader(proto, status string, h http.Header) {
 
 func (p *printer) printBodyReader(contentType string, r io.Reader) {
 	mediatype, _, _ := mime.ParseMediaType(contentType)
-	body, err := ioutil.ReadAll(r)
+	body, err := io.ReadAll(r)
 	if err != nil {
 		p.printf("* cannot read body: %v\n", p.format(color.FgRed, err.Error()))
 		return
@@ -571,7 +570,7 @@ func (p *printer) printRequestBody(req *http.Request) {
 		tee := io.TeeReader(req.Body, &buf)
 		defer req.Body.Close()
 		defer func() {
-			req.Body = ioutil.NopCloser(&buf)
+			req.Body = io.NopCloser(&buf)
 		}()
 		p.printBodyReader(contentType, tee)
 		return

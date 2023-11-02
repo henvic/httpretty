@@ -7,13 +7,13 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -1074,11 +1074,11 @@ func TestIncomingTLS(t *testing.T) {
 
 func TestIncomingMutualTLS(t *testing.T) {
 	t.Parallel()
-	caCert, err := ioutil.ReadFile("testdata/cert.pem")
+	caCert, err := os.ReadFile("testdata/cert.pem")
 	if err != nil {
 		panic(err)
 	}
-	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
+	clientCert, err := os.ReadFile("testdata/cert-client.pem")
 	if err != nil {
 		panic(err)
 	}
@@ -1174,11 +1174,11 @@ func TestIncomingMutualTLS(t *testing.T) {
 
 func TestIncomingMutualTLSNoSafetyLogging(t *testing.T) {
 	t.Parallel()
-	caCert, err := ioutil.ReadFile("testdata/cert.pem")
+	caCert, err := os.ReadFile("testdata/cert.pem")
 	if err != nil {
 		panic(err)
 	}
-	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
+	clientCert, err := os.ReadFile("testdata/cert-client.pem")
 	if err != nil {
 		panic(err)
 	}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	_ "embed"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -219,7 +218,7 @@ func TestPrintResponseNil(t *testing.T) {
 
 func testBody(t *testing.T, r io.Reader, want []byte) {
 	t.Helper()
-	got, err := ioutil.ReadAll(r)
+	got, err := io.ReadAll(r)
 	if err != nil {
 		t.Errorf("expected no error reading response body, got %v instead", err)
 	}

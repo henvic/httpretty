@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"mime/multipart"
@@ -321,7 +320,7 @@ func TestOutgoingFilter(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-	logger.SetOutput(ioutil.Discard)
+	logger.SetOutput(io.Discard)
 	logger.SetFilter(filteredURIs)
 	client := &http.Client{
 		Transport: logger.RoundTripper(newTransport()),
@@ -363,7 +362,7 @@ func TestOutgoingFilterPanicked(t *testing.T) {
 		ResponseHeader: true,
 		ResponseBody:   true,
 	}
-	logger.SetOutput(ioutil.Discard)
+	logger.SetOutput(io.Discard)
 	logger.SetFilter(func(req *http.Request) (bool, error) {
 		panic("evil panic")
 	})
@@ -1203,7 +1202,7 @@ func (h multipartHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("got size %d, wanted %d", header.Size, len(petition))
 	}
 
-	b, err := ioutil.ReadAll(file)
+	b, err := io.ReadAll(file)
 	if err != nil {
 		t.Errorf("server cannot read file sent over multipart: %v", err)
 	}
@@ -1377,7 +1376,7 @@ func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 func TestOutgoingTLSInvalidCertificate(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewTLSServer(&helloHandler{})
-	ts.Config.ErrorLog = log.New(ioutil.Discard, "", 0)
+	ts.Config.ErrorLog = log.New(io.Discard, "", 0)
 	defer ts.Close()
 
 	logger := &Logger{
@@ -1426,7 +1425,7 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
-	ts.Config.ErrorLog = log.New(ioutil.Discard, "", 0)
+	ts.Config.ErrorLog = log.New(io.Discard, "", 0)
 	client := ts.Client()
 	cert, err := tls.LoadX509KeyPair("testdata/cert-client.pem", "testdata/key-client.pem")
 	if err != nil {
@@ -1459,11 +1458,11 @@ func TestOutgoingTLSBadClientCertificate(t *testing.T) {
 
 func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 	t.Parallel()
-	caCert, err := ioutil.ReadFile("testdata/cert.pem")
+	caCert, err := os.ReadFile("testdata/cert.pem")
 	if err != nil {
 		panic(err)
 	}
-	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
+	clientCert, err := os.ReadFile("testdata/cert-client.pem")
 	if err != nil {
 		panic(err)
 	}
@@ -1557,11 +1556,11 @@ func TestOutgoingHTTP2MutualTLS(t *testing.T) {
 
 func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 	t.Parallel()
-	caCert, err := ioutil.ReadFile("testdata/cert.pem")
+	caCert, err := os.ReadFile("testdata/cert.pem")
 	if err != nil {
 		panic(err)
 	}
-	clientCert, err := ioutil.ReadFile("testdata/cert-client.pem")
+	clientCert, err := os.ReadFile("testdata/cert-client.pem")
 	if err != nil {
 		panic(err)
 	}
