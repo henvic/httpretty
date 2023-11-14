@@ -2,15 +2,11 @@ name: Tests
 
 on:
   push:
-    paths:
-      - "**.go"
-      - go.mod
-      - go.sum
+    branches: [ "main" ]
   pull_request:
-    paths:
-      - "**.go"
-      - go.mod
-      - go.sum
+    types: [opened, synchronize, reopened, ready_for_review]
+    # The branches below must be a subset of the branches above
+    branches: [ "main" ]
 
 jobs:
   test:
@@ -22,16 +18,13 @@ jobs:
     name: Test
     steps:
 
-    - name: Set up Go ${{ matrix.node }}
-      uses: actions/setup-go@v2
+    - name: Set up Go ${{ matrix.go }}
+      uses: actions/setup-go@v4
       with:
         go-version: ${{ matrix.go }}
 
     - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Download dependencies
-      run: go mod download
+      uses: actions/checkout@v4
 
     - name: Test
       # TODO(henvic): Skip generating code coverage when not sending it to Coveralls to speed up testing.
