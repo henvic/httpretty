@@ -28,8 +28,12 @@ jobs:
 
     - name: Test
       # TODO(henvic): Skip generating code coverage when not sending it to Coveralls to speed up testing.
+      # Remove example directory from code coverage explicitly since after #26 it
+      # started being considered on the code coverage report and we don't want that.
       continue-on-error: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.23.x' }}
-      run: go test -race -covermode atomic -coverprofile=profile.cov ./...
+      run: |
+        go test -race -covermode atomic -coverprofile=profile.cov ./...
+        sed -i '/^github\.com\/henvic\/httpretty\/example\//d' profile.cov
 
     - name: Code coverage
       if: ${{ matrix.os == 'ubuntu-latest' && matrix.go == '1.23.x' }}
