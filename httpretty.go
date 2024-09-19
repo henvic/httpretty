@@ -117,6 +117,9 @@ type Logger struct {
 	// Colors set ANSI escape codes that terminals use to print text in different colors.
 	Colors bool
 
+	// Align HTTP headers.
+	Align bool
+
 	// Formatters for the request and response bodies.
 	// No standard formatters are used. You need to add what you want to use explicitly.
 	// We provide a JSONFormatter for convenience (add it manually).

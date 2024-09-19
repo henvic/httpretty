@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -486,27 +487,42 @@ func (p *printer) printHeaders(prefix rune, h http.Header) {
 	if !p.logger.SkipSanitize {
 		h = header.Sanitize(header.DefaultSanitizers, h)
 	}
-	skipped := p.logger.cloneSkipHeader()
-	for _, key := range sortHeaderKeys(h) {
+
+	longest, sorted := sortHeaderKeys(h, p.logger.cloneSkipHeader())
+	for _, key := range sorted {
 		for _, v := range h[key] {
-			if _, skip := skipped[key]; skip {
-				continue
+			var pad string
+			if p.logger.Align {
+				pad = strings.Repeat(" ", longest-len(key))
 			}
-			p.printf("%c %s%s %s\n", prefix,
+			p.printf("%c %s%s %s%s\n", prefix,
 				p.format(color.FgBlue, color.Bold, key),
 				p.format(color.FgRed, ":"),
+				pad,
 				p.format(color.FgYellow, v))
 		}
 	}
 }
 
-func sortHeaderKeys(h http.Header) []string {
-	keys := make([]string, 0, len(h))
+func sortHeaderKeys(h http.Header, skipped map[string]struct{}) (int, []string) {
+	var (
+		keys    = make([]string, 0, len(h))
+		longest int
+	)
 	for key := range h {
+		if _, skip := skipped[key]; skip {
+			continue
+		}
 		keys = append(keys, key)
+		if l := len(key); l > longest {
+			longest = l
+		}
 	}
 	sort.Strings(keys)
-	return keys
+	if i := slices.Index(keys, "Host"); i > -1 {
+		keys = append([]string{"Host"}, slices.Delete(keys, i, i+1)...)
+	}
+	return longest, keys
 }
 
 func (p *printer) printRequestHeader(req *http.Request) {
@@ -514,31 +530,28 @@ func (p *printer) printRequestHeader(req *http.Request) {
 		p.format(color.FgBlue, color.Bold, req.Method),
 		p.format(color.FgYellow, req.URL.RequestURI()),
 		p.format(color.FgBlue, req.Proto))
+	p.printHeaders('>', addRequestHeaders(req))
+	p.println()
+}
+
+// addRequestHeaders returns a copy of the given header with an additional headers set, if known.
+func addRequestHeaders(req *http.Request) http.Header {
+	cp := http.Header{}
+	for k, v := range req.Header {
+		cp[k] = v
+	}
+
+	if len(req.Header.Values("Content-Length")) == 0 && req.ContentLength > 0 {
+		cp.Set("Content-Length", fmt.Sprintf("%d", req.ContentLength))
+	}
+
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
 	}
 	if host != "" {
-		p.printf("> %s%s %s\n",
-			p.format(color.FgBlue, color.Bold, "Host"),
-			p.format(color.FgRed, ":"),
-			p.format(color.FgYellow, host),
-		)
+		cp.Set("Host", host)
 	}
-	p.printHeaders('>', addHeaderContentLength(req))
-	p.println()
-}
-
-// addHeaderContentLength returns a copy of the given header with an additional header, Content-Length, if it's known.
-func addHeaderContentLength(req *http.Request) http.Header {
-	if req.ContentLength == 0 && len(req.Header.Values("Content-Length")) == 0 {
-		return req.Header
-	}
-	cp := http.Header{}
-	for k, v := range req.Header {
-		cp[k] = v
-	}
-	cp.Set("Content-Length", fmt.Sprintf("%d", req.ContentLength))
 	return cp
 }
 

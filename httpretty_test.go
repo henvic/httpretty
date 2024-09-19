@@ -51,6 +51,38 @@ func TestPrintRequest(t *testing.T) {
 	}
 }
 
+func TestPrintRequestWithAlign(t *testing.T) {
+	t.Parallel()
+	var req, err = http.NewRequest(http.MethodPost, "http://wxww.example.com/", nil)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("Header", "foo")
+	req.Header.Set("Other-Header", "bar")
+
+	logger := &Logger{
+		TLS:            true,
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+		Align:          true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	logger.PrintRequest(req)
+
+	want := `> POST / HTTP/1.1
+> Host:         wxww.example.com
+> Header:       foo
+> Other-Header: bar
+
+`
+	if got := buf.String(); got != want {
+		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
+	}
+}
+
 func TestPrintRequestWithColors(t *testing.T) {
 	t.Parallel()
 	var req, err = http.NewRequest(http.MethodPost, "http://wxww.example.com/", nil)
