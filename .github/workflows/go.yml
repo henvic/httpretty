@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: [1.21.x, 1.20.x] # when updating versions, update it below too.
+        go: [1.23.x, 1.22.x] # when updating versions, update it below too.
     runs-on: ${{ matrix.os }}
     name: Test
     steps:
@@ -28,11 +28,11 @@ jobs:
 
     - name: Test
       # TODO(henvic): Skip generating code coverage when not sending it to Coveralls to speed up testing.
-      continue-on-error: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.21.x' }}
+      continue-on-error: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.23.x' }}
       run: go test -race -covermode atomic -coverprofile=profile.cov ./...
 
     - name: Code coverage
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go == '1.21.x' }}
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go == '1.23.x' }}
       uses: shogo82148/actions-goveralls@v1
       with:
         path-to-profile: profile.cov
