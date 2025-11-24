@@ -24,7 +24,7 @@ jobs:
         go-version: ${{ matrix.go }}
 
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Test
       # TODO(henvic): Skip generating code coverage when not sending it to Coveralls to speed up testing.
