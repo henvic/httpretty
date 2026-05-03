@@ -505,6 +505,7 @@ form received
 \*  subject: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
 \*  start date: Wed Aug 12 22:20:45 UTC 2020
 \*  expire date: Fri Jul 19 22:20:45 UTC 2120
+\*  subjectAltName: "localhost" matches cert's "localhost"
 \*  issuer: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
 \*  TLS certificate verify ok\.
 < HTTP/2\.0 200 OK
@@ -626,6 +627,7 @@ Hello, world!
 \*  subject: O=Acme Co
 \*  start date: Thu Jan  1 00:00:00 UTC 1970
 \*  expire date: Sat Jan 29 16:00:00 UTC 2084
+\*  subjectAltName: "example\.com" matches cert's "example\.com"
 \*  issuer: O=Acme Co
 \*  TLS certificate verify ok\.
 < HTTP/1\.1 200 OK
@@ -645,6 +647,25 @@ Hello, world!
 > User-Agent: Robot/0.1 crawler@example.com
 
 * remote error: tls: %s
+-- TestOutgoingTLSIPSAN --
+^\* Request to %s
+> GET / HTTP/1\.1
+> Host: 127\.0\.0\.1
+> User-Agent: Robot/0\.1 crawler@example\.com
+
+\* TLS connection using TLS \d+\.\d+ / \w+
+\* Server certificate:
+\*  subject: O=Acme Co
+\*  start date: Thu Jan  1 00:00:00 UTC 1970
+\*  expire date: Sat Jan 29 16:00:00 UTC 2084
+\*  subjectAltName: "127\.0\.0\.1" matches cert's IP address!
+\*  issuer: O=Acme Co
+\*  TLS certificate verify ok\.
+< HTTP/1\.1 200 OK
+< Content-Length: 13
+< Content-Type: text/plain; charset=utf-8
+
+Hello, world!
 -- TestOutgoingTLSInsecureSkipVerify --
 ^\* Request to %s
 \* Skipping TLS verification: connection is susceptible to man-in-the-middle attacks\.
@@ -657,6 +678,7 @@ Hello, world!
 \*  subject: O=Acme Co
 \*  start date: Thu Jan  1 00:00:00 UTC 1970
 \*  expire date: Sat Jan 29 16:00:00 UTC 2084
+\*  subjectAltName: "example\.com" matches cert's "example\.com"
 \*  issuer: O=Acme Co
 \*  TLS certificate verify ok\.
 < HTTP/1\.1 200 OK

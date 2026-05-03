@@ -371,13 +371,24 @@ func (p *printer) printCertificate(hostname string, cert *x509.Certificate) {
 	p.printf(`*  subject: %v
 *  start date: %v
 *  expire date: %v
-*  issuer: %v
 `,
 		p.format(color.FgBlue, cert.Subject),
 		p.format(color.FgBlue, cert.NotBefore.Format(time.UnixDate)),
 		p.format(color.FgBlue, cert.NotAfter.Format(time.UnixDate)),
-		p.format(color.FgBlue, cert.Issuer),
 	)
+	if hostname != "" {
+		if san, ok := matchedSAN(hostname, cert); ok {
+			if san == "" {
+				p.printf("*  subjectAltName: \"%s\" matches cert's IP address!\n",
+					p.format(color.FgBlue, hostname))
+			} else {
+				p.printf("*  subjectAltName: \"%s\" matches cert's \"%s\"\n",
+					p.format(color.FgBlue, hostname),
+					p.format(color.FgBlue, san))
+			}
+		}
+	}
+	p.printf("*  issuer: %v\n", p.format(color.FgBlue, cert.Issuer))
 	if hostname == "" {
 		return
 	}
@@ -386,6 +397,48 @@ func (p *printer) printCertificate(hostname string, cert *x509.Certificate) {
 		return
 	}
 	p.println("*  TLS certificate verify ok.")
+}
+
+// matchedSAN finds the cert SAN entry that matches hostname, following the
+// RFC 6125 wildcard rule (leftmost label only). For IP-literal hostnames it
+// scans IPAddresses and returns "" with ok=true to signal an IP match.
+func matchedSAN(hostname string, cert *x509.Certificate) (string, bool) {
+	if ip := net.ParseIP(hostname); ip != nil {
+		for _, certIP := range cert.IPAddresses {
+			if certIP.Equal(ip) {
+				return "", true
+			}
+		}
+		return "", false
+	}
+	host := strings.TrimSuffix(strings.ToLower(hostname), ".")
+	for _, name := range cert.DNSNames {
+		if matchHostname(strings.ToLower(name), host) {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func matchHostname(pattern, host string) bool {
+	pattern = strings.TrimSuffix(pattern, ".")
+	if pattern == "" || host == "" {
+		return false
+	}
+	patternParts := strings.Split(pattern, ".")
+	hostParts := strings.Split(host, ".")
+	if len(patternParts) != len(hostParts) {
+		return false
+	}
+	for i, part := range patternParts {
+		if i == 0 && part == "*" {
+			continue
+		}
+		if part != hostParts[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) {

@@ -1336,6 +1336,41 @@ func TestOutgoingTLS(t *testing.T) {
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
+func TestOutgoingTLSIPSAN(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewTLSServer(&helloHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		TLS:            true,
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := ts.Client()
+	client.Transport = logger.RoundTripper(client.Transport)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	req.Host = "127.0.0.1" // hit the IP SAN path; the httptest cert has 127.0.0.1 in IPAddresses
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	want := fmt.Sprintf(golden(t.Name()), ts.URL)
+	if got := buf.String(); !regexp.MustCompile(want).MatchString(got) {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+	testBody(t, resp.Body, []byte("Hello, world!"))
+}
+
 func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewTLSServer(&helloHandler{})
