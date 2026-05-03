@@ -309,14 +309,8 @@ func (p *printer) printTLSInfo(state *tls.ConnectionState, skipVerifyChains bool
 	if state == nil {
 		return
 	}
-	protocol := tlsProtocolVersions[state.Version]
-	if protocol == "" {
-		protocol = fmt.Sprintf("%#v", state.Version)
-	}
-	cipher := tlsCiphers[state.CipherSuite]
-	if cipher == "" {
-		cipher = fmt.Sprintf("%#v", state.CipherSuite)
-	}
+	protocol := tls.VersionName(state.Version)
+	cipher := tls.CipherSuiteName(state.CipherSuite)
 	p.printf("* TLS connection using %s / %s", p.format(color.FgBlue, protocol), p.format(color.FgBlue, cipher))
 	if !skipVerifyChains && state.VerifiedChains == nil {
 		p.print(" (insecure=true)")
