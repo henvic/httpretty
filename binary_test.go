@@ -51,6 +51,21 @@ func TestIsBinary(t *testing.T) {
 			binary: true,
 		},
 		{
+			desc:   "Binary header (exactly 512 bytes) with text trailer",
+			data:   append(bytes.Repeat([]byte{1, 2, 3, 4, 5, 6, 7, 8}, 64), []byte("plain text trailer")...),
+			binary: true,
+		},
+		{
+			desc:   "Text over 512 bytes with binary trailer",
+			data:   append(bytes.Repeat([]byte("plain text "), 50), []byte{1, 2, 3, 4, 5}...),
+			binary: false,
+		},
+		{
+			desc:   "Large text with leading UTF-8 BOM and binary trailer", // https://www.unicode.org/faq/utf_bom#BOM
+			data:   append(append([]byte("\xEF\xBB\xBF"), bytes.Repeat([]byte("plain text "), 50)...), []byte{1, 2, 3, 4, 5}...),
+			binary: false,
+		},
+		{
 			desc:   "JPEG image",
 			data:   []byte("\xFF\xD8\xFF"),
 			binary: true,

@@ -205,7 +205,7 @@ func (p *printer) printResponseBodyOut(resp *http.Response) {
 // See discussion at https://groups.google.com/forum/#!topic/golang-nuts/YeLL7L7SwWs
 func isBinary(body []byte) bool {
 	if len(body) > 512 {
-		body = body[512:]
+		body = body[:512]
 	}
 	// If file contains UTF-8 OR UTF-16 BOM, consider it non-binary.
 	// Reference: https://tools.ietf.org/html/draft-ietf-websec-mime-sniff-03#section-5
