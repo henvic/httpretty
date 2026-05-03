@@ -410,7 +410,7 @@ func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) 
 	if skip {
 		return
 	}
-	if mediatype := req.Header.Get("Content-Type"); mediatype != "" && isBinaryMediatype(mediatype) {
+	if mediatype := rec.Header().Get("Content-Type"); mediatype != "" && isBinaryMediatype(mediatype) {
 		p.println("* body contains binary data")
 		return
 	}

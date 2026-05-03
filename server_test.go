@@ -790,6 +790,49 @@ func TestIncomingBinaryBodyNoMediatypeHeader(t *testing.T) {
 	}
 }
 
+func TestIncomingBinaryResponseTextRequest(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	is := inspect(logger.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		// Respond with a binary Content-Type but a body that has no binary bytes,
+		// so only the Content-Type header check can catch it (not the byte-level heuristic).
+		w.Header().Set("Content-Type", "application/pdf")
+		fmt.Fprint(w, "not really a pdf")
+	})), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+	go func() {
+		client := newServerClient()
+		req, err := http.NewRequest(http.MethodPost, ts.URL, strings.NewReader(`{"query":"convert"}`))
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if _, err = client.Do(req); err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+	is.Wait()
+	got := buf.String()
+	// The response body should be detected as binary based on the response Content-Type (application/pdf),
+	// not the request Content-Type (application/json).
+	if !strings.Contains(got, "* body contains binary data") {
+		t.Errorf("expected response body to be detected as binary based on response Content-Type, got:\n%s", got)
+	}
+	if !strings.Contains(got, `{"query":"convert"}`) {
+		t.Errorf("expected request body to be printed, but it was missing from:\n%s", got)
+	}
+}
+
 func TestIncomingLongRequest(t *testing.T) {
 	t.Parallel()
 	logger := &Logger{
