@@ -833,6 +833,140 @@ func TestIncomingBinaryResponseTextRequest(t *testing.T) {
 	}
 }
 
+func TestIncomingFlusher(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	is := inspect(logger.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Content-Type", "text/plain")
+		// Flush must not panic when the middleware wraps the ResponseWriter.
+		if f, ok := w.(http.Flusher); ok {
+			fmt.Fprint(w, "streamed")
+			f.Flush()
+		} else {
+			t.Error("expected ResponseWriter to implement http.Flusher")
+		}
+	})), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+	go func() {
+		client := newServerClient()
+		resp, err := client.Get(ts.URL)
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+		defer resp.Body.Close()
+		testBody(t, resp.Body, []byte("streamed"))
+	}()
+	is.Wait()
+	got := buf.String()
+	if !strings.Contains(got, "200 OK") {
+		t.Errorf("expected 200 OK in output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "streamed") {
+		t.Errorf("expected streamed body in output, got:\n%s", got)
+	}
+}
+
+// plainWriter is a minimal http.ResponseWriter that does not implement
+// http.Flusher, used to verify the middleware does not falsely advertise
+// flushing when the underlying writer cannot.
+type plainWriter struct {
+	h          http.Header
+	statusCode int
+	body       bytes.Buffer
+}
+
+func (p *plainWriter) Header() http.Header {
+	if p.h == nil {
+		p.h = http.Header{}
+	}
+	return p.h
+}
+func (p *plainWriter) Write(b []byte) (int, error) { return p.body.Write(b) }
+func (p *plainWriter) WriteHeader(c int)           { p.statusCode = c }
+
+func TestIncomingNonFlushableUnderlying(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var logBuf bytes.Buffer
+	logger.SetOutput(&logBuf)
+
+	var sawFlusher bool
+	var rcFlushErr error
+	handler := logger.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, sawFlusher = w.(http.Flusher)
+		rcFlushErr = http.NewResponseController(w).Flush()
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "ok")
+	}))
+
+	pw := &plainWriter{}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	handler.ServeHTTP(pw, req)
+
+	if sawFlusher {
+		t.Error("inner handler should not see http.Flusher when underlying is not flushable")
+	}
+	if rcFlushErr == nil {
+		t.Error("expected http.NewResponseController(w).Flush() to return an error")
+	}
+	// A non-flushable writer must not stop the response: it still reaches the
+	// client and is recorded by the middleware.
+	if got := pw.body.String(); got != "ok" {
+		t.Errorf("underlying writer body = %q, want %q", got, "ok")
+	}
+	if got := logBuf.String(); !strings.Contains(got, "ok") {
+		t.Errorf("expected recorded body in log output, got:\n%s", got)
+	}
+}
+
+func TestIncomingResponseController(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	is := inspect(logger.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Content-Type", "text/plain")
+		rc := http.NewResponseController(w)
+		fmt.Fprint(w, "streamed")
+		if err := rc.Flush(); err != nil {
+			t.Errorf("rc.Flush(): %v", err)
+		}
+		// SetReadDeadline is not on the wrapper; the controller must walk
+		// Unwrap to reach it on the underlying writer.
+		if err := rc.SetReadDeadline(time.Time{}); err != nil {
+			t.Errorf("rc.SetReadDeadline(): %v", err)
+		}
+	})), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+	go func() {
+		client := newServerClient()
+		resp, err := client.Get(ts.URL)
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+		defer resp.Body.Close()
+		testBody(t, resp.Body, []byte("streamed"))
+	}()
+	is.Wait()
+}
+
 func TestIncomingLongRequest(t *testing.T) {
 	t.Parallel()
 	logger := &Logger{

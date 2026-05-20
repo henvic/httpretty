@@ -51,3 +51,20 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	rr.ResponseWriter.WriteHeader(statusCode)
 	rr.statusCode = statusCode
 }
+
+// Unwrap returns the underlying ResponseWriter so that callers using
+// http.NewResponseController can reach interfaces (Flusher, Hijacker,
+// Pusher, deadline setters) implemented by the original writer.
+func (rr *responseRecorder) Unwrap() http.ResponseWriter {
+	return rr.ResponseWriter
+}
+
+// flushingRecorder is used only when the underlying writer implements
+// http.Flusher, so that rw.(http.Flusher) works.
+type flushingRecorder struct {
+	*responseRecorder
+}
+
+func (fr *flushingRecorder) Flush() {
+	fr.ResponseWriter.(http.Flusher).Flush()
+}

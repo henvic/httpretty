@@ -364,7 +364,11 @@ func (h httpHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		buf:             &bytes.Buffer{},
 	}
 	defer p.printServerResponse(req, rec)
-	h.next.ServeHTTP(rec, req)
+	var rw http.ResponseWriter = rec
+	if _, ok := w.(http.Flusher); ok {
+		rw = &flushingRecorder{rec}
+	}
+	h.next.ServeHTTP(rw, req)
 }
 
 // PrintRequest prints a request, even when WithHide is used to hide it.
