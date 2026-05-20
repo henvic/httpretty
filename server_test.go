@@ -105,7 +105,7 @@ func TestIncomingNotFound(t *testing.T) {
 			t.Errorf("cannot connect to the server: %v", err)
 		}
 		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("got status codem %v, wanted %v", resp.StatusCode, http.StatusNotFound)
+			t.Errorf("got status code %v, wanted %v", resp.StatusCode, http.StatusNotFound)
 		}
 	}()
 	is.Wait()

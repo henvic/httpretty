@@ -111,7 +111,7 @@ func (p *printer) printRequestInfo(req *http.Request) {
 	}
 }
 
-// checkFilter checkes if the request is filtered and if the Request value is nil.
+// checkFilter checks if the request is filtered and if the Request value is nil.
 func (p *printer) checkFilter(req *http.Request) (skip bool) {
 	filter := p.logger.getFilter()
 	if req == nil {
