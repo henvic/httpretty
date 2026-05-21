@@ -248,6 +248,46 @@ func TestPrintResponseNil(t *testing.T) {
 	}
 }
 
+func TestStatusColor(t *testing.T) {
+	t.Parallel()
+	// proto is always blue+bold; only the status text color varies by class.
+	const proto = "\x1b[34;1mHTTP/1.1\x1b[0m"
+	testCases := []struct {
+		desc   string
+		status string
+		want   string // expected colored status text, hardcoded
+	}{
+		{"empty status", "", "\x1b[31m\x1b[0m"},
+		{"informational 1xx", "100 Continue", "\x1b[34m100 Continue\x1b[0m"},
+		{"success 2xx", "200 OK", "\x1b[32m200 OK\x1b[0m"},
+		{"redirect 3xx", "301 Moved Permanently", "\x1b[33m301 Moved Permanently\x1b[0m"},
+		{"client error 4xx", "404 Not Found", "\x1b[31m404 Not Found\x1b[0m"},
+		{"server error 5xx", "500 Internal Server Error", "\x1b[1;31m500 Internal Server Error\x1b[0m"},
+		{"non-standard 6xx", "678 Teapot Overheated", "\x1b[34m678 Teapot Overheated\x1b[0m"},
+		{"non-numeric status", "OK", "\x1b[31mOK\x1b[0m"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			logger := &Logger{
+				ResponseHeader: true,
+				Colors:         true,
+			}
+			var buf bytes.Buffer
+			logger.SetOutput(&buf)
+			logger.PrintResponse(&http.Response{
+				Proto:  "HTTP/1.1",
+				Status: tc.status,
+				Header: http.Header{},
+			})
+			want := "< " + proto + " " + tc.want + "\n\n"
+			if got := buf.String(); got != want {
+				t.Errorf("PrintResponse(%q) status line = %q, want %q", tc.status, got, want)
+			}
+		})
+	}
+}
+
 func testBody(t *testing.T, r io.Reader, want []byte) {
 	t.Helper()
 	got, err := io.ReadAll(r)

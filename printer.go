@@ -468,10 +468,36 @@ func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) 
 	p.printBodyReader(rec.Header().Get("Content-Type"), rec.buf)
 }
 
+// statusColor returns color attributes for an HTTP status line
+// based on the status class:
+// 1xx (informational), 2xx (success) is green, 3xx (redirection) is yellow,
+// 4xx (client error) is red, and 5xx (server error) is bold red.
+// Any non-standard classes (0xx, 6xx-9xx) are blue,
+// and an empty status or one that doesn't start with a digit, is shown red.
+func statusColor(status string) []color.Attribute {
+	if len(status) == 0 {
+		return []color.Attribute{color.FgRed}
+	}
+	switch status[0] {
+	case '2':
+		return []color.Attribute{color.FgGreen}
+	case '3':
+		return []color.Attribute{color.FgYellow}
+	case '4':
+		return []color.Attribute{color.FgRed}
+	case '5':
+		return []color.Attribute{color.Bold, color.FgRed}
+	case '0', '1', '6', '7', '8', '9':
+		return []color.Attribute{color.FgBlue}
+	default:
+		return []color.Attribute{color.FgRed}
+	}
+}
+
 func (p *printer) printResponseHeader(proto, status string, h http.Header) {
 	p.printf("< %s %s\n",
 		p.format(color.FgBlue, color.Bold, proto),
-		p.format(color.FgRed, status))
+		p.format(statusColor(status), status))
 	p.printHeaders('<', h)
 	p.println()
 }
