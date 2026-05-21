@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: [1.23.x, 1.22.x] # when updating versions, update it below too.
+        go: [1.25.x, 1.26.x] # when updating versions, update it below too.
     runs-on: ${{ matrix.os }}
     name: Test
     steps:
@@ -30,13 +30,13 @@ jobs:
       # TODO(henvic): Skip generating code coverage when not sending it to Coveralls to speed up testing.
       # Remove example directory from code coverage explicitly since after #26 it
       # started being considered on the code coverage report and we don't want that.
-      continue-on-error: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.23.x' }}
+      continue-on-error: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.26.x' }}
       run: |
         go test -race -covermode atomic -coverprofile=profile.cov ./...
         sed -i '/^github\.com\/henvic\/httpretty\/example\//d' profile.cov
 
     - name: Code coverage
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go == '1.23.x' }}
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go == '1.26.x' }}
       uses: shogo82148/actions-goveralls@v1
       with:
         path-to-profile: profile.cov
