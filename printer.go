@@ -243,6 +243,7 @@ var binaryMediatypes = map[string]struct{}{
 	"video":                         {},
 	"application/vnd.ms-fontobject": {},
 	"font":                          {},
+	"application/gzip":              {},
 	"application/x-gzip":            {},
 	"application/zip":               {},
 	"application/x-rar-compressed":  {},
