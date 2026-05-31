@@ -325,6 +325,21 @@ func (r roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err err
 }
 
 // Middleware for logging incoming requests to a HTTP server.
+//
+// The http.ResponseWriter passed to the wrapped handler is a recorder that
+// captures the response for logging.
+// It forwards http.Flusher when the underlying writer supports it,
+// so handlers can flush as usual. However, http.Hijacker and http.Pusher
+// are not reachable through a direct type assertion.
+//
+// To reach them, or to set read/write deadlines, use http.NewResponseController(w),
+// which unwraps the recorder and operates on the original ResponseWriter:
+//
+//	rc := http.NewResponseController(w)
+//	conn, brw, err := rc.Hijack()
+//
+// Once a connection is hijacked the response bypasses the recorder, so
+// httpretty cannot log its status or body.
 func (l *Logger) Middleware(next http.Handler) http.Handler {
 	return httpHandler{
 		logger: l,
