@@ -163,6 +163,40 @@ func TestOutgoingConcurrency(t *testing.T) {
 	}
 }
 
+func TestOutgoingOnReadyFlusher(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(helloHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	logger.SetFlusher(OnReady)
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	client := &http.Client{Transport: logger.RoundTripper(newTransport())}
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatalf("cannot create request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	testBody(t, resp.Body, []byte("Hello, world!"))
+
+	got := buf.String()
+	for _, want := range []string{"> GET / HTTP/1.1", "< HTTP/1.1 200 OK", "Hello, world!"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("OnReady output does not contain %q\n%s", want, got)
+		}
+	}
+}
+
 func TestOutgoingMinimal(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewServer(&helloHandler{})
@@ -1369,6 +1403,100 @@ func TestOutgoingTLSIPSAN(t *testing.T) {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
 	testBody(t, resp.Body, []byte("Hello, world!"))
+}
+
+// TestOutgoingTLSCertificateSAN checks the subjectAltName matching for a TLS connection.
+func TestOutgoingTLSCertificateSAN(t *testing.T) {
+	t.Parallel()
+	cert := selfSignedCert(t, []string{"*.example.com"}, nil)
+
+	ts := httptest.NewUnstartedServer(helloHandler{})
+	ts.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	ts.StartTLS()
+	defer ts.Close()
+
+	pool := x509.NewCertPool()
+	pool.AddCert(cert.Leaf)
+
+	testCases := []struct {
+		name    string
+		host    string
+		want    []string
+		notWant []string
+	}{
+		{
+			name: "wildcard match",
+			host: "sub.example.com",
+			want: []string{
+				`subjectAltName: "sub.example.com" matches cert's "*.example.com"`,
+				"TLS certificate verify ok.",
+			},
+		},
+		{
+			name:    "label mismatch under wildcard",
+			host:    "sub.other.com",
+			notWant: []string{"subjectAltName", "TLS certificate verify ok."},
+		},
+		{
+			name:    "label count mismatch",
+			host:    "a.b.c.example.com",
+			notWant: []string{"subjectAltName", "TLS certificate verify ok."},
+		},
+		{
+			name:    "ip without matching san",
+			host:    "10.0.0.1",
+			notWant: []string{"subjectAltName", "TLS certificate verify ok."},
+		},
+		{
+			name:    "empty hostname label",
+			host:    ".",
+			notWant: []string{"subjectAltName", "TLS certificate verify ok."},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &Logger{
+				TLS:            true,
+				RequestHeader:  true,
+				ResponseHeader: true,
+				ResponseBody:   true,
+			}
+			var buf bytes.Buffer
+			logger.SetOutput(&buf)
+
+			transport := newTransport()
+			transport.TLSClientConfig = &tls.Config{
+				RootCAs:    pool,
+				ServerName: "sub.example.com",
+			}
+			client := &http.Client{Transport: logger.RoundTripper(transport)}
+
+			req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+			if err != nil {
+				t.Fatalf("cannot create request: %v", err)
+			}
+			req.Host = tc.host
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("cannot connect to the server: %v", err)
+			}
+			defer resp.Body.Close()
+			testBody(t, resp.Body, []byte("Hello, world!"))
+
+			got := buf.String()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("host %q: TLS log does not contain %q\n%s", tc.host, want, got)
+				}
+			}
+			for _, notWant := range tc.notWant {
+				if strings.Contains(got, notWant) {
+					t.Errorf("host %q: TLS log should not contain %q\n%s", tc.host, notWant, got)
+				}
+			}
+		})
+	}
 }
 
 func TestOutgoingTLSInsecureSkipVerify(t *testing.T) {

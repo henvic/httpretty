@@ -2,8 +2,15 @@ package httpretty
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	_ "embed"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -309,6 +316,42 @@ func TestJSONFormatterWriterError(t *testing.T) {
 	want := "underlying writer for JSONFormatter must be *bytes.Buffer"
 	if err := f.Format(os.Stdout, []byte(`{}`)); err == nil || err.Error() != want {
 		t.Errorf("got format error = %v, wanted %v", err, want)
+	}
+}
+
+// selfSignedCert builds a self-signed certificate carrying the given SANs.
+// It is its own CA, so the client can both present and trust it.
+// Tests use it for a throwaway httptest certificate.
+func selfSignedCert(t *testing.T, dnsNames []string, ips []net.IP) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("cannot generate key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "httpretty test"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		DNSNames:              dnsNames,
+		IPAddresses:           ips,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("cannot create certificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("cannot parse certificate: %v", err)
+	}
+	return tls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  key,
+		Leaf:        leaf,
 	}
 }
 
