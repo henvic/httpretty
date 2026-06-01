@@ -451,6 +451,39 @@ func TestOutgoingSkipHeader(t *testing.T) {
 	}
 }
 
+func TestOutgoingTransferEncoding(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(&helloHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	req, err := http.NewRequest(http.MethodPut, ts.URL, strings.NewReader("ping"))
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	// Transfer-Encoding lives in its own field on http.Request rather than in Header.
+	req.TransferEncoding = []string{"chunked"}
+
+	if _, err = client.Do(req); err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+
+	if want, got := "> Transfer-Encoding: chunked\n", buf.String(); !strings.Contains(got, want) {
+		t.Errorf("logged HTTP request %q; want it to contain %q", got, want)
+	}
+}
+
 func TestOutgoingBodyFilter(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewServer(&jsonHandler{})

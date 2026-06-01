@@ -619,6 +619,10 @@ func addRequestHeaders(req *http.Request) http.Header {
 		cp.Set("Content-Length", fmt.Sprintf("%d", req.ContentLength))
 	}
 
+	if len(req.Header.Values("Transfer-Encoding")) == 0 && len(req.TransferEncoding) > 0 {
+		cp.Set("Transfer-Encoding", strings.Join(req.TransferEncoding, ", "))
+	}
+
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
