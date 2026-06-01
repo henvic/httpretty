@@ -1194,7 +1194,7 @@ func TestIncomingMultipartForm(t *testing.T) {
 	uri := fmt.Sprintf("%s/multipart-upload", ts.URL)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	multipartTestdata(writer, body)
+	multipartTestdata(writer)
 	go func() {
 		client := newServerClient()
 		req, err := http.NewRequest(http.MethodPost, uri, body)

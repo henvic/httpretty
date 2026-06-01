@@ -61,7 +61,7 @@ func TestNoFormat(t *testing.T) {
 func TestFormatStartingWithNumber(t *testing.T) {
 	want := "\x1b[102;95m100 forks\x1b[0m"
 	number := 100
-	if reflect.TypeOf(number).String() != "int" {
+	if reflect.TypeFor[int]().String() != "int" {
 		t.Errorf("Must be integer; not a similar like Attribute")
 	}
 	if got := Format(BgHiGreen, FgHiMagenta, number, " forks"); got != want {

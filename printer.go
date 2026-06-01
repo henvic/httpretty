@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net"
 	"net/http"
@@ -50,7 +51,7 @@ func (p *printer) flush() {
 	fmt.Fprint(w, p.buf.String())
 }
 
-func (p *printer) print(a ...interface{}) {
+func (p *printer) print(a ...any) {
 	p.logger.mu.Lock()
 	defer p.logger.mu.Unlock()
 	w := p.logger.getWriter()
@@ -61,7 +62,7 @@ func (p *printer) print(a ...interface{}) {
 	fmt.Fprint(&p.buf, a...)
 }
 
-func (p *printer) println(a ...interface{}) {
+func (p *printer) println(a ...any) {
 	p.logger.mu.Lock()
 	defer p.logger.mu.Unlock()
 	w := p.logger.getWriter()
@@ -72,7 +73,7 @@ func (p *printer) println(a ...interface{}) {
 	fmt.Fprintln(&p.buf, a...)
 }
 
-func (p *printer) printf(format string, a ...interface{}) {
+func (p *printer) printf(format string, a ...any) {
 	p.logger.mu.Lock()
 	defer p.logger.mu.Unlock()
 	w := p.logger.getWriter()
@@ -550,7 +551,7 @@ func (p *printer) safeBodyFormat(f Formatter, w io.Writer, src []byte) (err erro
 	return f.Format(w, src)
 }
 
-func (p *printer) format(s ...interface{}) string {
+func (p *printer) format(s ...any) string {
 	if p.logger.Colors {
 		return color.Format(s...)
 	}
@@ -611,9 +612,7 @@ func (p *printer) printRequestHeader(req *http.Request) {
 // addRequestHeaders returns a copy of the given header with an additional headers set, if known.
 func addRequestHeaders(req *http.Request) http.Header {
 	cp := http.Header{}
-	for k, v := range req.Header {
-		cp[k] = v
-	}
+	maps.Copy(cp, req.Header)
 
 	if len(req.Header.Values("Content-Length")) == 0 && req.ContentLength > 0 {
 		cp.Set("Content-Length", fmt.Sprintf("%d", req.ContentLength))

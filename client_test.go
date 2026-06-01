@@ -149,7 +149,7 @@ func TestOutgoingConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	concurrency := 100
 	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
+	for range concurrency {
 		go outgoingGet(t, client, ts, wg.Done)
 		time.Sleep(time.Millisecond) // let's slow down just a little bit ("too many files descriptors open" on a slow machine, more realistic traffic, and so on)
 	}
@@ -1215,7 +1215,7 @@ func TestOutgoingLongResponseUnknownLengthTooLong(t *testing.T) {
 	}
 }
 
-func multipartTestdata(writer *multipart.Writer, body *bytes.Buffer) {
+func multipartTestdata(writer *multipart.Writer) {
 	params := []struct {
 		name  string
 		value string
@@ -1302,7 +1302,7 @@ func TestOutgoingMultipartForm(t *testing.T) {
 	uri := fmt.Sprintf("%s/multipart-upload", ts.URL)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	multipartTestdata(writer, body)
+	multipartTestdata(writer)
 	req, err := http.NewRequest(http.MethodPost, uri, body)
 	if err != nil {
 		t.Errorf("cannot create request: %v", err)
