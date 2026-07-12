@@ -241,6 +241,45 @@ func TestIncomingSanitized(t *testing.T) {
 	}
 }
 
+func TestIncomingSkipSanitize(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+		SkipSanitize:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	is := inspect(logger.Middleware(helloHandler{}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+	uri := fmt.Sprintf("%s/incoming", ts.URL)
+	go func() {
+		client := newServerClient()
+		req, err := http.NewRequest(http.MethodGet, uri, nil)
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+		req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+		req.AddCookie(&http.Cookie{
+			Name:  "food",
+			Value: "sorbet",
+		})
+
+		if _, err = client.Do(req); err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+	is.Wait()
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 type hideHandler struct {
 	next http.Handler
 }
@@ -382,6 +421,39 @@ func TestIncomingSkipHeader(t *testing.T) {
 	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestIncomingTransferEncoding(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		RequestHeader:  true,
+		RequestBody:    true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	is := inspect(logger.Middleware(helloHandler{}), 1)
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+
+	go func() {
+		client := newServerClient()
+		req, err := http.NewRequest(http.MethodPut, ts.URL, strings.NewReader("ping"))
+		if err != nil {
+			t.Errorf("cannot create request: %v", err)
+		}
+		// Transfer-Encoding lives in its own field on http.Request rather than in Header.
+		req.TransferEncoding = []string{"chunked"}
+		if _, err = client.Do(req); err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+		}
+	}()
+	is.Wait()
+
+	if want, got := "> Transfer-Encoding: chunked\n", buf.String(); !strings.Contains(got, want) {
+		t.Errorf("logged HTTP request %q; want it to contain %q", got, want)
 	}
 }
 
@@ -1444,6 +1516,105 @@ func TestIncomingMutualTLSNoSafetyLogging(t *testing.T) {
 	want := fmt.Sprintf(golden(t.Name()), host, is.req.RemoteAddr, port)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+func TestIncomingTrailers(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		RequestHeader:  true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Trailer", "X-Checksum") // announced trailer
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "hello")
+		w.Header().Set("X-Checksum", "abc123")                 // value for the announced trailer
+		w.Header().Set(http.TrailerPrefix+"X-Late", "lateval") // unannounced trailer
+	})
+
+	ts := httptest.NewServer(logger.Middleware(handler))
+	defer ts.Close()
+
+	resp, err := newServerClient().Get(ts.URL)
+	if err != nil {
+		t.Fatalf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	testBody(t, resp.Body, []byte("hello"))
+
+	got := buf.String()
+	// The Trailer announcement stays in the header block.
+	if !strings.Contains(got, "< Trailer: X-Checksum") {
+		t.Errorf("expected Trailer announcement header, got:\n%s", got)
+	}
+	// The raw http.TrailerPrefix magic key must never be printed.
+	if leaked := http.TrailerPrefix + "X-Late"; strings.Contains(got, leaked) {
+		t.Errorf("raw %q key leaked into output:\n%s", leaked, got)
+	}
+	trailersAt := strings.Index(got, "< Trailers:")
+	if trailersAt == -1 {
+		t.Fatalf("expected trailers section in output, got:\n%s", got)
+	}
+	if bodyAt := strings.Index(got, "hello"); bodyAt == -1 || bodyAt > trailersAt {
+		t.Errorf("expected body to be printed before trailers, got:\n%s", got)
+	}
+	// Both trailers (announced and prefix-based) appear in the trailers section,
+	// i.e. after the "< Trailers:" marker rather than in the header block.
+	for _, want := range []string{"X-Checksum: abc123", "X-Late: lateval"} {
+		switch at := strings.Index(got, want); {
+		case at == -1:
+			t.Errorf("expected %q in output, got:\n%s", want, got)
+		case at < trailersAt:
+			t.Errorf("expected %q in the trailers section, not the header block, got:\n%s", want, got)
+		}
+	}
+}
+
+func TestIncomingTrailersDeclaredButEmpty(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		RequestHeader:  true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+
+	// The handler announces a trailer but never writes a value for it, so there
+	// is nothing to print after the body.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Trailer", "X-Checksum")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "hello")
+	})
+
+	ts := httptest.NewServer(logger.Middleware(handler))
+	defer ts.Close()
+
+	resp, err := newServerClient().Get(ts.URL)
+	if err != nil {
+		t.Fatalf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	testBody(t, resp.Body, []byte("hello"))
+
+	got := buf.String()
+	// The Trailer announcement still appears in the header block.
+	if !strings.Contains(got, "< Trailer: X-Checksum") {
+		t.Errorf("expected Trailer announcement header, got:\n%s", got)
+	}
+	// With no value sent, there must be no trailers section.
+	if strings.Contains(got, "< Trailers:") {
+		t.Errorf("expected no trailers section for a declared-but-empty trailer, got:\n%s", got)
 	}
 }
 

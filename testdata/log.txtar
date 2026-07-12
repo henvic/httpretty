@@ -299,6 +299,18 @@ Hello, world!
 < HTTP/1.1 200 OK
 
 {"result":"Hello, world!","number":3.14}
+-- TestIncomingSkipSanitize --
+* Request to %s
+* Request from %s
+> GET /incoming HTTP/1.1
+> Host: %s
+> Accept-Encoding: gzip
+> Cookie: food=sorbet
+> User-Agent: Robot/0.1 crawler@example.com
+
+< HTTP/1.1 200 OK
+
+Hello, world!
 -- TestIncomingTLS --
 ^\* Request to https://example\.com/
 \* Request from %s

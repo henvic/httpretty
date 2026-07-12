@@ -149,9 +149,23 @@ func (p *printer) printResponse(resp *http.Response) {
 		p.printResponseHeader(resp.Proto, resp.Status, resp.Header)
 		p.maybeOnReady()
 	}
+
+	// The client only fills resp.Trailer once the body is read to EOF by httpretty.
+	// When the body is left unread, too large, binary, or filtered we don't capture trailers.
+	var readToEnd bool
 	if p.logger.ResponseBody && resp.Body != nil && (resp.Request == nil || resp.Request.Method != http.MethodHead) {
-		p.printResponseBodyOut(resp)
+		readToEnd = p.printResponseBodyOut(resp)
 		p.maybeOnReady()
+	}
+	if p.logger.ResponseHeader && len(resp.Trailer) > 0 {
+		switch {
+		case hasTrailerValues(resp.Trailer):
+			p.printTrailers('<', resp.Trailer)
+			p.maybeOnReady()
+		case !readToEnd:
+			p.printf("* %s\n", p.format(color.FgBlue, "trailers announced but not captured"))
+			p.maybeOnReady()
+		}
 	}
 }
 
@@ -167,31 +181,34 @@ func (p *printer) checkBodyFiltered(h http.Header) (skip bool, err error) {
 	return false, nil
 }
 
-func (p *printer) printResponseBodyOut(resp *http.Response) {
+// printResponseBodyOut prints the client response body and reports whether the
+// body was read to EOF.
+func (p *printer) printResponseBodyOut(resp *http.Response) (readToEnd bool) {
 	if resp.ContentLength == 0 {
-		return
+		return true
 	}
 	skip, err := p.checkBodyFiltered(resp.Header)
 	if err != nil {
 		p.printf("* %s\n", p.format(color.FgRed, "error on response body filter: ", err.Error()))
 	}
 	if skip {
-		return
+		return false
 	}
 	if contentType := resp.Header.Get("Content-Type"); contentType != "" && isBinaryMediatype(contentType) {
 		p.println("* body contains binary data")
-		return
+		return false
 	}
 	if p.logger.MaxResponseBody > 0 && resp.ContentLength > p.logger.MaxResponseBody {
 		p.printf("* body is too long (%d bytes) to print, skipping (longer than %d bytes)\n", resp.ContentLength, p.logger.MaxResponseBody)
-		return
+		return false
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if resp.ContentLength == -1 {
-		if newBody := p.printBodyUnknownLength(contentType, p.logger.MaxResponseBody, resp.Body); newBody != nil {
+		newBody, readToEnd := p.printBodyUnknownLength(contentType, p.logger.MaxResponseBody, resp.Body)
+		if newBody != nil {
 			resp.Body = newBody
 		}
-		return
+		return readToEnd
 	}
 	var buf bytes.Buffer
 	tee := io.TeeReader(resp.Body, &buf)
@@ -200,6 +217,7 @@ func (p *printer) printResponseBodyOut(resp *http.Response) {
 		resp.Body = io.NopCloser(&buf)
 	}()
 	p.printBodyReader(contentType, tee)
+	return true
 }
 
 // isBinary uses heuristics to guess if file is binary (actually, "printable" in the terminal).
@@ -265,7 +283,8 @@ func isBinaryMediatype(mediatype string) bool {
 
 const maxDefaultUnknownReadable = 4096 // bytes
 
-func (p *printer) printBodyUnknownLength(contentType string, maxLength int64, r io.ReadCloser) (newBody io.ReadCloser) {
+// printBodyUnknownLength is used for (tentatively) printing a body of unknown length.
+func (p *printer) printBodyUnknownLength(contentType string, maxLength int64, r io.ReadCloser) (newBody io.ReadCloser, readToEnd bool) {
 	if maxLength == 0 {
 		maxLength = maxDefaultUnknownReadable
 	}
@@ -279,10 +298,12 @@ func (p *printer) printBodyUnknownLength(contentType string, maxLength int64, r 
 	// Avoiding returning early to mitigate any risk of bad reader implementations that might
 	// send something even after returning io.EOF if read again.
 	case err == io.EOF && n == 0:
+		readToEnd = true
 	case err == nil && int64(n) > maxLength:
 		p.printf("* body is too long, skipping (contains more than %d bytes)\n", n-1)
 	case err == io.ErrUnexpectedEOF || err == nil:
 		// cannot pass same bytes reader below because we only read it once.
+		readToEnd = true
 		p.printBodyReader(contentType, bytes.NewReader(pb))
 	default:
 		p.printf("* cannot read body: %v (%d bytes read)\n", err, n)
@@ -444,11 +465,21 @@ func matchHostname(pattern, host string) bool {
 }
 
 func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) {
+	var trailers http.Header
 	if p.logger.ResponseHeader {
+		var headers http.Header
+		headers, trailers = splitTrailers(rec.Header())
 		// TODO(henvic): see how httptest.ResponseRecorder adds extra headers due to Content-Type detection
 		// and other stuff (Date). It would be interesting to show them here too (either as default or opt-in).
-		p.printResponseHeader(req.Proto, fmt.Sprintf("%d %s", rec.statusCode, http.StatusText(rec.statusCode)), rec.Header())
+		p.printResponseHeader(req.Proto, fmt.Sprintf("%d %s", rec.statusCode, http.StatusText(rec.statusCode)), headers)
 	}
+	p.printServerResponseBody(rec)
+	if p.logger.ResponseHeader && hasTrailerValues(trailers) {
+		p.printTrailers('<', trailers)
+	}
+}
+
+func (p *printer) printServerResponseBody(rec *responseRecorder) {
 	if !p.logger.ResponseBody || rec.size == 0 {
 		return
 	}
@@ -502,6 +533,83 @@ func (p *printer) printResponseHeader(proto, status string, h http.Header) {
 		p.format(statusColor(status), status))
 	p.printHeaders('<', h)
 	p.println()
+}
+
+// printTrailers that are sent after the body.
+func (p *printer) printTrailers(prefix rune, h http.Header) {
+	p.printf("%c Trailers:\n", prefix)
+	p.printHeaders(prefix, h)
+	p.println()
+}
+
+// hasTrailerValues reports whether h carries at least one non-empty value.
+// The HTTP client pre-populates resp.Trailer with nil values for each key
+// declared in the response's Trailer header before the body is read to EOF,
+// so a non-zero len(resp.Trailer) alone does not mean any trailer value is
+// actually available to print.
+func hasTrailerValues(h http.Header) bool {
+	for _, v := range h {
+		if len(v) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// splitTrailers separates a handled server response's recorded header map into
+// the headers sent in the header block and the trailers sent after the body.
+//
+// An http.Server emits trailers two ways, both reconstructed here the same way
+// httptest.ResponseRecorder.Result builds its Trailer: keys announced ahead of
+// time in the "Trailer" header, and keys written with the http.TrailerPrefix
+// magic prefix. Both otherwise linger in the ResponseWriter header map, so they
+// are kept out of headers to avoid printing them as if they were sent with the
+// header block. The "Trailer" announcement header itself is left in headers.
+//
+// In the common case where h carries no trailers, h itself is returned along
+// with nil trailers, so callers must treat both maps as read-only.
+func splitTrailers(h http.Header) (headers, trailers http.Header) {
+	var announced map[string]struct{}
+	for _, list := range h["Trailer"] {
+		for key := range strings.SplitSeq(list, ",") {
+			if key = http.CanonicalHeaderKey(strings.TrimSpace(key)); key != "" {
+				if announced == nil {
+					announced = map[string]struct{}{}
+				}
+				announced[key] = struct{}{}
+			}
+		}
+	}
+	split := false
+	for key := range h {
+		if _, ok := announced[key]; ok {
+			split = true
+			break
+		}
+		if strings.HasPrefix(key, http.TrailerPrefix) {
+			split = true
+			break
+		}
+	}
+	if !split {
+		return h, nil
+	}
+	headers = http.Header{}
+	trailers = http.Header{}
+	for key, vv := range h {
+		if _, ok := announced[key]; ok {
+			trailers[key] = vv
+			continue
+		}
+		if name, ok := strings.CutPrefix(key, http.TrailerPrefix); ok {
+			for _, v := range vv {
+				trailers.Add(name, v)
+			}
+			continue
+		}
+		headers[key] = vv
+	}
+	return headers, trailers
 }
 
 func (p *printer) printBodyReader(contentType string, r io.Reader) {
@@ -665,7 +773,7 @@ func (p *printer) printRequestBody(req *http.Request) {
 		p.printBodyReader(contentType, tee)
 		return
 	}
-	if newBody := p.printBodyUnknownLength(contentType, p.logger.MaxRequestBody, req.Body); newBody != nil {
+	if newBody, _ := p.printBodyUnknownLength(contentType, p.logger.MaxRequestBody, req.Body); newBody != nil {
 		req.Body = newBody
 	}
 }

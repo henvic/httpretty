@@ -106,6 +106,10 @@ type Logger struct {
 	RequestBody bool
 
 	// ResponseHeader received by the client or set by the HTTP handlers.
+	//
+	// A received response's trailers are logged only when ResponseBody is also
+	// enabled and the body is read in full; otherwise httpretty notes that they
+	// were announced but not captured.
 	ResponseHeader bool
 
 	// ResponseBody received by the client or set by the server.

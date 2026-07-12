@@ -1848,6 +1848,139 @@ func TestOutgoingHTTP2MutualTLSNoSafetyLogging(t *testing.T) {
 	}
 }
 
+func TestOutgoingTrailers(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Trailer", "X-Checksum")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "hello")
+		w.Header().Set("X-Checksum", "abc123")
+	}))
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	req.Header.Add("User-Agent", "Robot/0.1 crawler@example.com")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	testBody(t, resp.Body, []byte("hello"))
+	got := buf.String()
+	if !strings.Contains(got, "< Trailers:") {
+		t.Errorf("expected trailers section in output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "X-Checksum") {
+		t.Errorf("expected X-Checksum trailer in output, got:\n%s", got)
+	}
+}
+
+func TestOutgoingTrailersDeclaredButEmpty(t *testing.T) {
+	t.Parallel()
+	// The server announces a trailer but never sends a value for it. The HTTP
+	// client pre-populates resp.Trailer with a nil value for the declared key,
+	// so there is no trailer to print and no trailers section should appear.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Trailer", "X-Checksum")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "hello")
+	}))
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		ResponseHeader: true,
+		ResponseBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	testBody(t, resp.Body, []byte("hello"))
+
+	if got := buf.String(); strings.Contains(got, "< Trailers:") {
+		t.Errorf("expected no trailers section for a declared-but-empty trailer, got:\n%s", got)
+	}
+}
+
+func TestOutgoingTrailersNotCaptured(t *testing.T) {
+	t.Parallel()
+	// The server sends a real trailer value, but the logger does not read the
+	// response body (ResponseBody is off), so the HTTP client never fills
+	// resp.Trailer. Rather than drop the announced trailers silently, the logger
+	// prints an informational note in their place.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		w.Header().Set("Trailer", "X-Checksum")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "hello")
+		w.Header().Set("X-Checksum", "abc123")
+	}))
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader:  true,
+		ResponseHeader: true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	testBody(t, resp.Body, []byte("hello"))
+
+	got := buf.String()
+	if !strings.Contains(got, "trailers announced but not captured") {
+		t.Errorf("expected an informational note about uncaptured trailers, got:\n%s", got)
+	}
+	if strings.Contains(got, "< Trailers:") {
+		t.Errorf("did not expect a trailers section when trailers were not captured, got:\n%s", got)
+	}
+	if strings.Contains(got, "abc123") {
+		t.Errorf("did not expect the trailer value to be captured, got:\n%s", got)
+	}
+}
+
 // netListener is similar to httptest.newlocalListener() and listens locally in a random port.
 // See https://github.com/golang/go/blob/5375c71289917ac7b25c6fa4bb0f4fa17be19a07/src/net/http/httptest/server.go#L60-L75
 func netListener() (net.Listener, error) {
