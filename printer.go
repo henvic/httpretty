@@ -8,6 +8,7 @@ import (
 	"io"
 	"maps"
 	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"slices"
@@ -464,13 +465,13 @@ func matchHostname(pattern, host string) bool {
 	return true
 }
 
+// printServerResponse prints the headers the handler set.
+// Naturally, we do not capture anything added later, such as Date.
 func (p *printer) printServerResponse(req *http.Request, rec *responseRecorder) {
 	var trailers http.Header
 	if p.logger.ResponseHeader {
 		var headers http.Header
 		headers, trailers = splitTrailers(rec.Header())
-		// TODO(henvic): see how httptest.ResponseRecorder adds extra headers due to Content-Type detection
-		// and other stuff (Date). It would be interesting to show them here too (either as default or opt-in).
 		p.printResponseHeader(req.Proto, fmt.Sprintf("%d %s", rec.statusCode, http.StatusText(rec.statusCode)), headers)
 	}
 	p.printServerResponseBody(rec)
@@ -613,31 +614,102 @@ func splitTrailers(h http.Header) (headers, trailers http.Header) {
 }
 
 func (p *printer) printBodyReader(contentType string, r io.Reader) {
-	mediatype, _, _ := mime.ParseMediaType(contentType)
 	body, err := io.ReadAll(r)
 	if err != nil {
 		p.printf("* cannot read body: %v\n", p.format(color.FgRed, err.Error()))
+		return
+	}
+	p.printBody(contentType, body, 0)
+}
+
+// maxMultipartDepth bounds how deep nested multipart bodies are split into parts;
+// deeper parts are printed as a regular body. Without a bound, a maliciously nested
+// multipart body of n bytes would amplify to O(n²) memory, as splitting each level
+// copies all the levels nested under it.
+const maxMultipartDepth = 2
+
+// printBody of a message or of a part of a multipart message, nested depth levels deep.
+func (p *printer) printBody(contentType string, body []byte, depth int) {
+	mediatype, params, _ := mime.ParseMediaType(contentType)
+	f := p.formatter(mediatype)
+	// A multipart body is printed part by part, unless a formatter handles it.
+	if f == nil && depth < maxMultipartDepth && strings.HasPrefix(mediatype, "multipart/") && params["boundary"] != "" &&
+		p.printMultipart(mediatype, params["boundary"], body, depth) {
 		return
 	}
 	if isBinary(body) {
 		p.println("* body contains binary data")
 		return
 	}
-	for _, f := range p.logger.Formatters {
-		if ok := p.safeBodyMatch(f, mediatype); !ok {
-			continue
-		}
-		var formatted bytes.Buffer
-		switch err := p.safeBodyFormat(f, &formatted, body); {
-		case err != nil:
-			p.printf("* body cannot be formatted: %v\n%s\n", p.format(color.FgRed, err.Error()), string(body))
-		default:
-			p.println(formatted.String())
-		}
+	if f == nil {
+		p.println(string(body))
 		return
 	}
+	var formatted bytes.Buffer
+	if err := p.safeBodyFormat(f, &formatted, body); err != nil {
+		p.printf("* body cannot be formatted: %v\n%s\n", p.format(color.FgRed, err.Error()), string(body))
+		return
+	}
+	p.println(formatted.String())
+}
 
-	p.println(string(body))
+// formatter returns the first formatter matching the media type, if any.
+func (p *printer) formatter(mediatype string) Formatter {
+	for _, f := range p.logger.Formatters {
+		if p.safeBodyMatch(f, mediatype) {
+			return f
+		}
+	}
+	return nil
+}
+
+// printMultipart prints each part of a multipart body on its own, so parts are
+// formatted, and checked for binary content, individually.
+//
+// It reports whether the body was printed. A body that cannot be parsed (say, a
+// truncated one) is left for the caller to print as-is, and nothing is printed here.
+func (p *printer) printMultipart(mediatype, boundary string, body []byte, depth int) bool {
+	type bodyPart struct {
+		header http.Header
+		body   []byte
+	}
+	var parts []bodyPart
+	mr := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		next, err := mr.NextRawPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false
+		}
+		b, err := io.ReadAll(next)
+		if err != nil {
+			return false
+		}
+		parts = append(parts, bodyPart{
+			header: http.Header(next.Header),
+			body:   b,
+		})
+	}
+	if len(parts) == 0 {
+		return false
+	}
+	noun := "parts"
+	if len(parts) == 1 {
+		noun = "part"
+	}
+	p.printf("* %s body with %d %s\n", mediatype, len(parts), noun)
+	for i, part := range parts {
+		p.printf("* part %d\n", i+1)
+		p.printHeaders('|', part.header)
+		if len(part.body) == 0 {
+			continue
+		}
+		p.println()
+		p.printBody(part.header.Get("Content-Type"), part.body, depth+1)
+	}
+	return true
 }
 
 func (p *printer) safeBodyMatch(f Formatter, mediatype string) bool {
@@ -756,7 +828,6 @@ func (p *printer) printRequestBody(req *http.Request) {
 		p.println("* body contains binary data")
 		return
 	}
-	// TODO(henvic): add support for printing multipart/formdata information as body (to responses too).
 	if p.logger.MaxRequestBody > 0 && req.ContentLength > p.logger.MaxRequestBody {
 		p.printf("* body is too long (%d bytes) to print, skipping (longer than %d bytes)\n",
 			req.ContentLength, p.logger.MaxRequestBody)

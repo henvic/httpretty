@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	_ "embed"
+	"errors"
 	"io"
 	"math/big"
 	"net"
@@ -53,6 +54,32 @@ func TestPrintRequest(t *testing.T) {
 > Host: wxww.example.com
 
 `
+	if got := buf.String(); got != want {
+		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
+	}
+}
+
+// errReader always fails, simulating a request body that cannot be read.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("read failure") }
+
+func TestPrintRequestBodyReadError(t *testing.T) {
+	t.Parallel()
+	req, err := http.NewRequest(http.MethodPost, "http://www.example.com/", io.NopCloser(errReader{}))
+	if err != nil {
+		panic(err)
+	}
+	req.ContentLength = 10
+
+	logger := &Logger{
+		RequestBody: true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	logger.PrintRequest(req)
+
+	want := "* cannot read body: read failure\n"
 	if got := buf.String(); got != want {
 		t.Errorf("PrintRequest(req) = %v, wanted %v", got, want)
 	}

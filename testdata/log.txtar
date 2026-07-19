@@ -223,6 +223,24 @@ long request received
 -- TestIncomingMinimal --
 * Request to %s
 * Request from %s
+-- TestIncomingMultipartResponse --
+* Request to %s
+* Request from %s
+< HTTP/1.1 200 OK
+< Content-Type: multipart/mixed; boundary=f0f4a3b1c2d5
+
+* multipart/mixed body with 2 parts
+* part 1
+| Content-Type: text/plain
+
+Hello, world!
+* part 2
+| Content-Type: application/json
+
+{
+    "result": "Hello, world!",
+    "number": 3.14
+}
 -- TestIncomingMultipartForm --
 * Request to %s
 * Request from %s
@@ -233,6 +251,20 @@ long request received
 > Content-Type: %s
 > User-Agent: Go-http-client/1.1
 
+* multipart/form-data body with 3 parts
+* part 1
+| Content-Disposition: form-data; name="author"
+
+Frédéric Bastiat
+* part 2
+| Content-Disposition: form-data; name="title"
+
+Candlemakers' Petition
+* part 3
+| Content-Disposition: form-data; name="file"; filename="petition"
+| Content-Type: application/octet-stream
+
+%s
 < HTTP/1.1 200 OK
 
 upload received
@@ -590,11 +622,89 @@ long request received
 > Content-Length: 10355
 > Content-Type: %s
 
+* multipart/form-data body with 3 parts
+* part 1
+| Content-Disposition: form-data; name="author"
+
+Frédéric Bastiat
+* part 2
+| Content-Disposition: form-data; name="title"
+
+Candlemakers' Petition
+* part 3
+| Content-Disposition: form-data; name="file"; filename="petition"
+| Content-Type: application/octet-stream
+
+%s
 < HTTP/1.1 200 OK
 < Content-Length: 15
 < Content-Type: text/plain; charset=utf-8
 
 upload received
+-- TestOutgoingMultipartEmptyPart --
+* Request to %s
+> POST /multipart-upload HTTP/1.1
+> Host: %s
+> Content-Length: 84
+> Content-Type: multipart/form-data; boundary=f0f4a3b1c2d5
+
+* multipart/form-data body with 1 part
+* part 1
+| Content-Disposition: form-data; name="empty"
+-- TestOutgoingMultipartFormatter --
+* Request to %s
+< HTTP/1.1 200 OK
+< Content-Length: %d
+< Content-Type: multipart/mixed; boundary=f0f4a3b1c2d5
+
+%d bytes of multipart data
+-- TestOutgoingMultipartResponse --
+* Request to %s
+< HTTP/1.1 200 OK
+< Content-Length: %d
+< Content-Type: multipart/mixed; boundary=f0f4a3b1c2d5
+
+* multipart/mixed body with 2 parts
+* part 1
+| Content-Type: text/plain
+
+Hello, world!
+* part 2
+| Content-Type: application/json
+
+{
+    "result": "Hello, world!",
+    "number": 3.14
+}
+-- TestOutgoingMultipartInvalid --
+* Request to %s
+> POST /multipart-upload HTTP/1.1
+> Host: %s
+> Content-Length: %d
+> Content-Type: multipart/form-data; boundary=8ef4ab7d2a1c
+
+%s
+-- TestOutgoingMultipartMixed --
+* Request to %s
+> POST /multipart-upload HTTP/1.1
+> Host: %s
+> Content-Length: 438
+> Content-Type: %s
+
+* multipart/form-data body with 2 parts
+* part 1
+| Content-Disposition: form-data; name="metadata"
+| Content-Type: application/json
+
+{
+    "result": "Hello, world!",
+    "number": 3.14
+}
+* part 2
+| Content-Disposition: form-data; name="file"; filename="image.png"
+| Content-Type: application/octet-stream
+
+* body contains binary data
 -- TestOutgoingSanitized --
 * Request to %s
 > GET / HTTP/1.1

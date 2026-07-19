@@ -1246,11 +1246,46 @@ func TestIncomingLongResponseUnknownLengthTooLong(t *testing.T) {
 	}
 }
 
+// TestIncomingMultipartResponse verifies a multipart body a handler responds with is
+// printed part by part, just like a request body is.
+func TestIncomingMultipartResponse(t *testing.T) {
+	t.Parallel()
+	logger := &Logger{
+		ResponseHeader: true,
+		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	body := multipartMixedBody(t)
+	is := inspect(logger.Middleware(multipartMixedHandler{body}), 1)
+
+	ts := httptest.NewServer(is)
+	defer ts.Close()
+	uri := fmt.Sprintf("%s/multipart-download", ts.URL)
+	go func() {
+		client := newServerClient()
+		resp, err := client.Get(uri)
+		if err != nil {
+			t.Errorf("cannot connect to the server: %v", err)
+			return
+		}
+		testBody(t, resp.Body, body)
+	}()
+	is.Wait()
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr)
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
 func TestIncomingMultipartForm(t *testing.T) {
 	t.Parallel()
 	logger := &Logger{
-		RequestHeader: true,
-		// TODO(henvic): print request body once support for printing out multipart/formdata body is added.
+		RequestHeader:  true,
+		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
 		Formatters: []Formatter{
@@ -1279,7 +1314,7 @@ func TestIncomingMultipartForm(t *testing.T) {
 		}
 	}()
 	is.Wait()
-	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr(), writer.FormDataContentType())
+	want := fmt.Sprintf(golden(t.Name()), uri, is.req.RemoteAddr, ts.Listener.Addr(), writer.FormDataContentType(), petition)
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}

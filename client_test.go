@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/textproto"
 	"net/url"
 	"os"
 	"regexp"
@@ -1241,6 +1242,54 @@ func multipartTestdata(writer *multipart.Writer) {
 	}
 }
 
+// multipartMixedBoundary is fixed, rather than random, so golden files can rely on it.
+const multipartMixedBoundary = "f0f4a3b1c2d5"
+
+// multipartMixedBody is a multipart/mixed body with a plain text and a JSON part.
+func multipartMixedBody(t *testing.T) []byte {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.SetBoundary(multipartMixedBoundary); err != nil {
+		t.Fatalf("cannot set multipart boundary: %v", err)
+	}
+	parts := []struct {
+		mediatype string
+		content   string
+	}{
+		{"text/plain", "Hello, world!"},
+		{"application/json", `{"result":"Hello, world!","number":3.14}`},
+	}
+	for _, p := range parts {
+		part, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Type": []string{p.mediatype},
+		})
+		if err != nil {
+			t.Fatalf("cannot create %s part: %v", p.mediatype, err)
+		}
+		if _, err := io.WriteString(part, p.content); err != nil {
+			t.Fatalf("cannot write %s part: %v", p.mediatype, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("cannot close multipart writer: %v", err)
+	}
+	return body.Bytes()
+}
+
+// multipartMixedHandler responds with the multipart/mixed body above.
+type multipartMixedHandler struct {
+	body []byte
+}
+
+func (h multipartMixedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header()["Date"] = nil
+	w.Header().Set("Content-Type", "multipart/mixed; boundary="+multipartMixedBoundary)
+	if _, err := w.Write(h.body); err != nil {
+		panic(err)
+	}
+}
+
 type multipartHandler struct {
 	t *testing.T
 }
@@ -1285,8 +1334,8 @@ func TestOutgoingMultipartForm(t *testing.T) {
 	defer ts.Close()
 
 	logger := &Logger{
-		RequestHeader: true,
-		// TODO(henvic): print request body once support for printing out multipart/formdata body is added.
+		RequestHeader:  true,
+		RequestBody:    true,
 		ResponseHeader: true,
 		ResponseBody:   true,
 		Formatters: []Formatter{
@@ -1311,7 +1360,317 @@ func TestOutgoingMultipartForm(t *testing.T) {
 	if _, err = client.Do(req); err != nil {
 		t.Errorf("cannot connect to the server: %v", err)
 	}
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr(), writer.FormDataContentType(), petition)
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+// TestOutgoingMultipartMixed verifies each part of a multipart body is formatted, and
+// checked for binary content, on its own: a binary part doesn't hide the whole body.
+func TestOutgoingMultipartMixed(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		fmt.Fprint(w, "upload received")
+	}))
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader: true,
+		RequestBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	uri := fmt.Sprintf("%s/multipart-upload", ts.URL)
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	metadata, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": []string{`form-data; name="metadata"`},
+		"Content-Type":        []string{"application/json"},
+	})
+	if err != nil {
+		t.Fatalf("cannot create metadata part: %v", err)
+	}
+	if _, err := metadata.Write([]byte(`{"result":"Hello, world!","number":3.14}`)); err != nil {
+		t.Fatalf("cannot write metadata part: %v", err)
+	}
+	file, err := writer.CreateFormFile("file", "image.png")
+	if err != nil {
+		t.Fatalf("cannot create file part: %v", err)
+	}
+	if _, err := file.Write([]byte("\x89PNG\x0d\x0a\x1a\x0a")); err != nil {
+		t.Fatalf("cannot write file part: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("cannot close multipart writer: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, uri, body)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
 	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr(), writer.FormDataContentType())
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+// TestOutgoingMultipartInvalid verifies a body that cannot be split into parts —
+// malformed, truncated, or carrying no parts — is printed as-is, rather than
+// partially printed or dropped.
+func TestOutgoingMultipartInvalid(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Date"] = nil
+		fmt.Fprint(w, "upload received")
+	}))
+	defer ts.Close()
+
+	testCases := []struct {
+		name string
+		body string
+	}{
+		{"malformed", "not really a multipart body"},
+		{"truncated", "--8ef4ab7d2a1c\r\nContent-Type: text/plain\r\n\r\ntruncated: no closing boundary"},
+		{"noparts", "--8ef4ab7d2a1c--\r\n"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &Logger{
+				RequestHeader: true,
+				RequestBody:   true,
+			}
+			var buf bytes.Buffer
+			logger.SetOutput(&buf)
+			client := &http.Client{
+				Transport: logger.RoundTripper(newTransport()),
+			}
+
+			uri := fmt.Sprintf("%s/multipart-upload", ts.URL)
+			req, err := http.NewRequest(http.MethodPost, uri, strings.NewReader(tc.body))
+			if err != nil {
+				t.Errorf("cannot create request: %v", err)
+			}
+			req.Header.Set("Content-Type", "multipart/form-data; boundary=8ef4ab7d2a1c")
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Errorf("cannot connect to the server: %v", err)
+			}
+			defer resp.Body.Close()
+			want := fmt.Sprintf(golden("TestOutgoingMultipartInvalid"), uri, ts.Listener.Addr(), len(tc.body), tc.body)
+			if got := buf.String(); got != want {
+				t.Errorf("logged HTTP request %s; want %s", got, want)
+			}
+		})
+	}
+}
+
+// TestOutgoingMultipartResponse verifies a multipart response body is printed part by
+// part, just like a request body is.
+func TestOutgoingMultipartResponse(t *testing.T) {
+	t.Parallel()
+	body := multipartMixedBody(t)
+	ts := httptest.NewServer(multipartMixedHandler{body})
+	defer ts.Close()
+
+	logger := &Logger{
+		ResponseHeader: true,
+		ResponseBody:   true,
+		Formatters: []Formatter{
+			&JSONFormatter{},
+		},
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, len(body))
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+	testBody(t, resp.Body, body)
+}
+
+// multipartFormatter formats a whole multipart/mixed body, rather than each of its parts.
+type multipartFormatter struct{}
+
+func (f *multipartFormatter) Match(mediatype string) bool {
+	return mediatype == "multipart/mixed"
+}
+
+func (f *multipartFormatter) Format(w io.Writer, src []byte) error {
+	_, err := fmt.Fprintf(w, "%d bytes of multipart data", len(src))
+	return err
+}
+
+// TestOutgoingMultipartFormatter verifies a formatter matching a multipart media type
+// takes precedence over printing the body part by part.
+func TestOutgoingMultipartFormatter(t *testing.T) {
+	t.Parallel()
+	body := multipartMixedBody(t)
+	ts := httptest.NewServer(multipartMixedHandler{body})
+	defer ts.Close()
+
+	logger := &Logger{
+		ResponseHeader: true,
+		ResponseBody:   true,
+		Formatters: []Formatter{
+			&multipartFormatter{},
+		},
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	want := fmt.Sprintf(golden(t.Name()), ts.URL, len(body), len(body))
+	if got := buf.String(); got != want {
+		t.Errorf("logged HTTP request %s; want %s", got, want)
+	}
+}
+
+// nestedMultipartBody returns a multipart body nested depth levels deep, with a plain
+// text part at the innermost level, and the content type of the outermost level.
+// Boundaries are nested1 (outermost) through nested<depth>.
+func nestedMultipartBody(t *testing.T, depth int) (body []byte, contentType string) {
+	t.Helper()
+	body = []byte("innermost part reached")
+	contentType = "text/plain"
+	for i := depth; i >= 1; i-- {
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+		if err := writer.SetBoundary(fmt.Sprintf("nested%d", i)); err != nil {
+			t.Fatalf("cannot set multipart boundary: %v", err)
+		}
+		part, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Type": []string{contentType},
+		})
+		if err != nil {
+			t.Fatalf("cannot create nested part: %v", err)
+		}
+		if _, err := part.Write(body); err != nil {
+			t.Fatalf("cannot write nested part: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatalf("cannot close multipart writer: %v", err)
+		}
+		body = buf.Bytes()
+		contentType = "multipart/mixed; boundary=" + writer.Boundary()
+	}
+	return body, contentType
+}
+
+// TestOutgoingMultipartNested verifies nested multipart bodies are split into parts
+// only up to maxMultipartDepth, and deeper levels are printed as a regular body,
+// so a deeply nested body cannot amplify memory use.
+func TestOutgoingMultipartNested(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(&helloHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader: true,
+		RequestBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	body, contentType := nestedMultipartBody(t, maxMultipartDepth+2)
+	req, err := http.NewRequest(http.MethodPost, ts.URL, bytes.NewReader(body))
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	got := buf.String()
+	if count := strings.Count(got, "* multipart/mixed body with 1 part"); count != maxMultipartDepth {
+		t.Errorf("split %d levels of nested multipart body, wanted %d", count, maxMultipartDepth)
+	}
+	// Boundaries of split levels are consumed; the level past the depth limit is
+	// printed as a regular body, so its boundary delimiters show up as-is.
+	if boundary := fmt.Sprintf("--nested%d", maxMultipartDepth); strings.Contains(got, boundary) {
+		t.Errorf("boundary %s of a split level should not be printed", boundary)
+	}
+	if boundary := fmt.Sprintf("--nested%d", maxMultipartDepth+1); !strings.Contains(got, boundary) {
+		t.Errorf("boundary %s should be printed as part of a regular body", boundary)
+	}
+	if !strings.Contains(got, "innermost part reached") {
+		t.Error("innermost part body should be printed")
+	}
+}
+
+// TestOutgoingMultipartEmptyPart verifies a part carrying no body doesn't print one.
+func TestOutgoingMultipartEmptyPart(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(&helloHandler{})
+	defer ts.Close()
+
+	logger := &Logger{
+		RequestHeader: true,
+		RequestBody:   true,
+	}
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	client := &http.Client{
+		Transport: logger.RoundTripper(newTransport()),
+	}
+
+	uri := fmt.Sprintf("%s/multipart-upload", ts.URL)
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.SetBoundary(multipartMixedBoundary); err != nil {
+		t.Fatalf("cannot set multipart boundary: %v", err)
+	}
+	if err := writer.WriteField("empty", ""); err != nil {
+		t.Fatalf("cannot write empty field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("cannot close multipart writer: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, uri, body)
+	if err != nil {
+		t.Errorf("cannot create request: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("cannot connect to the server: %v", err)
+	}
+	defer resp.Body.Close()
+	want := fmt.Sprintf(golden(t.Name()), uri, ts.Listener.Addr())
 	if got := buf.String(); got != want {
 		t.Errorf("logged HTTP request %s; want %s", got, want)
 	}
