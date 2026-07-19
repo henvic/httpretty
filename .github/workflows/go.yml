@@ -24,13 +24,16 @@ jobs:
         go-version: ${{ matrix.go }}
 
     - name: Check out code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Test
-      # TODO(henvic): Skip generating code coverage when not sending it to Coveralls to speed up testing.
+      if: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.26.x' }}
+      run: go test -race ./...
+
+    - name: Test with code coverage
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.go == '1.26.x' }}
       # Remove example directory from code coverage explicitly since after #26 it
       # started being considered on the code coverage report and we don't want that.
-      continue-on-error: ${{ matrix.os != 'ubuntu-latest' || matrix.go != '1.26.x' }}
       run: |
         go test -race -covermode atomic -coverprofile=profile.cov ./...
         sed -i '/^github\.com\/henvic\/httpretty\/example\//d' profile.cov
