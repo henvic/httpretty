@@ -504,7 +504,7 @@ func (p *printer) printServerResponseBody(rec *responseRecorder) {
 
 // statusColor returns color attributes for an HTTP status line
 // based on the status class:
-// 1xx (informational), 2xx (success) is green, 3xx (redirection) is yellow,
+// 1xx (informational) is blue, 2xx (success) is green, 3xx (redirection) is yellow,
 // 4xx (client error) is red, and 5xx (server error) is bold red.
 // Any non-standard classes (0xx, 6xx-9xx) are blue,
 // and an empty status or one that doesn't start with a digit, is shown red.
