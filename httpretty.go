@@ -69,6 +69,7 @@ import (
 	"sync"
 
 	"github.com/henvic/httpretty/internal/color"
+	"github.com/henvic/httpretty/internal/header"
 )
 
 // Formatter can be used to format body.
@@ -84,6 +85,16 @@ type Formatter interface {
 func WithHide(ctx context.Context) context.Context {
 	return context.WithValue(ctx, contextHide{}, struct{}{})
 }
+
+// HeaderSanitizer allows you to sanitize or redact HTTP headers.
+// It receives the header key and value, and returns the sanitized value.
+type HeaderSanitizer func(name, value string) string
+
+// DefaultRedactedValue is the placeholder used when redacting headers.
+const DefaultRedactedValue = "[REDACTED]"
+
+// RedactedValue is an alias for DefaultRedactedValue.
+const RedactedValue = DefaultRedactedValue
 
 // Logger provides a way for you to print client and server-side information about your HTTP traffic.
 type Logger struct {
@@ -118,6 +129,12 @@ type Logger struct {
 	// SkipSanitize bypasses sanitizing headers containing credentials (such as Authorization).
 	SkipSanitize bool
 
+	// SanitizeHeaders contains a list of header names to redact with [REDACTED].
+	SanitizeHeaders []string
+
+	// HeaderSanitizer allows you to set a custom function to sanitize header values.
+	HeaderSanitizer HeaderSanitizer
+
 	// Colors set ANSI escape codes that terminals use to print text in different colors.
 	Colors bool
 
@@ -137,12 +154,14 @@ type Logger struct {
 	// If value is not set and Content-Length is not sent, 4096 bytes is considered.
 	MaxResponseBody int64
 
-	mu         sync.Mutex // ensures atomic writes; protects the following fields
-	w          io.Writer
-	filter     Filter
-	skipHeader map[string]struct{}
-	bodyFilter BodyFilter
-	flusher    Flusher
+	mu              sync.Mutex // ensures atomic writes; protects the following fields
+	w               io.Writer
+	filter          Filter
+	skipHeader      map[string]struct{}
+	sanitizeHeader  map[string]struct{}
+	headerSanitizer HeaderSanitizer
+	bodyFilter      BodyFilter
+	flusher         Flusher
 }
 
 // Filter allows you to skip requests.
@@ -194,6 +213,32 @@ func (l *Logger) SkipHeader(headers []string) {
 		m[textproto.CanonicalMIMEHeaderKey(h)] = struct{}{}
 	}
 	l.skipHeader = m
+}
+
+// SanitizeHeader allows you to redact specific headers with [REDACTED].
+// This method is concurrency safe.
+func (l *Logger) SanitizeHeader(headers []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	m := map[string]struct{}{}
+	for _, h := range headers {
+		m[textproto.CanonicalMIMEHeaderKey(h)] = struct{}{}
+	}
+	l.sanitizeHeader = m
+}
+
+// RedactHeaders is an alias for SanitizeHeader.
+// This method is concurrency safe.
+func (l *Logger) RedactHeaders(headers []string) {
+	l.SanitizeHeader(headers)
+}
+
+// SetHeaderSanitizer allows you to set a function to sanitize headers.
+// Pass nil to remove the header sanitizer. This method is concurrency safe.
+func (l *Logger) SetHeaderSanitizer(f HeaderSanitizer) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.headerSanitizer = f
 }
 
 // SetBodyFilter allows you to set a function to skip printing a body.
@@ -251,6 +296,32 @@ func (l *Logger) cloneSkipHeader() map[string]struct{} {
 	}
 
 	return m
+}
+
+func (l *Logger) cloneSanitizeHeader() map[string]struct{} {
+	l.mu.Lock()
+	sanitized := l.sanitizeHeader
+	l.mu.Unlock()
+
+	m := map[string]struct{}{}
+	for _, h := range l.SanitizeHeaders {
+		m[textproto.CanonicalMIMEHeaderKey(h)] = struct{}{}
+	}
+	for h := range sanitized {
+		m[h] = struct{}{}
+	}
+
+	return m
+}
+
+func (l *Logger) getHeaderSanitizer() HeaderSanitizer {
+	l.mu.Lock()
+	f := l.headerSanitizer
+	if f == nil {
+		f = l.HeaderSanitizer
+	}
+	l.mu.Unlock()
+	return f
 }
 
 type contextHide struct{}
@@ -441,4 +512,19 @@ func (j *JSONFormatter) Format(w io.Writer, src []byte) error {
 		return errors.New("underlying writer for JSONFormatter must be *bytes.Buffer")
 	}
 	return json.Indent(dst, src, "", "    ")
+}
+
+// AuthorizationSanitizer is used to sanitize Authorization and Proxy-Authorization headers.
+func AuthorizationSanitizer(unsafe string) string {
+	return header.AuthorizationSanitizer(unsafe)
+}
+
+// CookieSanitizer is used to sanitize Cookie header values.
+func CookieSanitizer(unsafe string) string {
+	return header.CookieSanitizer(unsafe)
+}
+
+// SetCookieSanitizer is used to sanitize Set-Cookie header values.
+func SetCookieSanitizer(unsafe string) string {
+	return header.SetCookieSanitizer(unsafe)
 }

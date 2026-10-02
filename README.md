@@ -97,7 +97,31 @@ logger.SetFilter(func filteredURIs(req *http.Request) (bool, error) {
 })
 ```
 
+## Header sanitization and redaction
+By default, sensitive headers (`Authorization`, `Proxy-Authorization`, `Cookie`, and `Set-Cookie`) are sanitized.
+You can bypass sanitization by setting `SkipSanitize: true`.
+
+### Redacting specific headers
+You can specify headers to redact with `[REDACTED]`:
+
+```go
+logger.SanitizeHeader([]string{"Authorization", "Cookie", "X-Api-Key"})
+```
+
+### Custom header sanitization function
+You can also set a custom sanitization function for header values:
+
+```go
+logger.SetHeaderSanitizer(func(name, value string) string {
+	if strings.EqualFold(name, "X-Custom-Auth") {
+		return "[REDACTED]"
+	}
+	return value
+})
+```
+
 ## Formatters
 You can define a formatter for any media type by implementing the Formatter interface.
 
 We provide a JSONFormatter for convenience (it is not enabled by default).
+
