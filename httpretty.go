@@ -95,8 +95,6 @@ type Logger struct {
 	Time bool
 
 	// TLS information, such as certificates and ciphers.
-	// BUG(henvic): Currently, the TLS information prints after the response header, although it
-	// should be printed before the request header.
 	TLS bool
 
 	// RequestHeader set by the client or received from the server.
@@ -311,17 +309,30 @@ func (r roundTripper) RoundTrip(req *http.Request) (resp *http.Response, err err
 		// please remember http.Request.TLS is ignored by the HTTP client.
 		p.printOutgoingClientTLS(tlsClientConfig)
 	}
-	p.printRequest(req)
+	var reqP printer
+	if l.TLS {
+		reqP = printer{
+			logger:  l,
+			flusher: OnEnd,
+		}
+		reqP.printRequest(req)
+	} else {
+		p.printRequest(req)
+	}
 	defer func() {
+		if l.TLS {
+			if resp != nil {
+				p.printTLSInfo(resp.TLS, false)
+				p.printTLSServer(req.Host, resp.TLS)
+			}
+			p.print(reqP.buf.String())
+			p.maybeOnReady()
+		}
 		if err != nil {
 			p.printf("* %s\n", p.format(color.FgRed, err.Error()))
 			if resp == nil {
 				return
 			}
-		}
-		if l.TLS {
-			p.printTLSInfo(resp.TLS, false)
-			p.printTLSServer(req.Host, resp.TLS)
 		}
 		p.printResponse(resp)
 	}()
