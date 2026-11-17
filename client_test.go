@@ -1762,6 +1762,52 @@ func TestOutgoingTLS(t *testing.T) {
 	testBody(t, resp.Body, []byte("Hello, world!"))
 }
 
+func TestOutgoingTLSPrintOrder(t *testing.T) {
+	t.Parallel()
+	for _, flusher := range []Flusher{NoBuffer, OnReady, OnEnd} {
+		ts := httptest.NewTLSServer(&helloHandler{})
+		defer ts.Close()
+
+		logger := &Logger{
+			TLS:            true,
+			RequestHeader:  true,
+			RequestBody:    true,
+			ResponseHeader: true,
+			ResponseBody:   true,
+		}
+		logger.SetFlusher(flusher)
+		var buf bytes.Buffer
+		logger.SetOutput(&buf)
+		client := ts.Client()
+		client.Transport = logger.RoundTripper(client.Transport)
+
+		req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+		if err != nil {
+			t.Fatalf("cannot create request: %v", err)
+		}
+		req.Host = "example.com"
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("cannot connect to server: %v", err)
+		}
+		resp.Body.Close()
+
+		got := buf.String()
+		tlsIdx := strings.Index(got, "* TLS connection using ")
+		reqIdx := strings.Index(got, "> GET / HTTP/1.1")
+		respIdx := strings.Index(got, "< HTTP/1.1 200 OK")
+		if tlsIdx == -1 || reqIdx == -1 || respIdx == -1 {
+			t.Fatalf("flusher %v: missing expected log sections in output:\n%s", flusher, got)
+		}
+		if tlsIdx >= reqIdx {
+			t.Errorf("flusher %v: TLS info at index %d should appear before request header at index %d", flusher, tlsIdx, reqIdx)
+		}
+		if reqIdx >= respIdx {
+			t.Errorf("flusher %v: request header at index %d should appear before response header at index %d", flusher, reqIdx, respIdx)
+		}
+	}
+}
+
 func TestOutgoingTLSIPSAN(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewTLSServer(&helloHandler{})

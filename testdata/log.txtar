@@ -540,9 +540,6 @@ form received
 \*  start date: Sat Jan 25 20:12:36 UTC 2020
 \*  expire date: Mon Jan  1 20:12:36 UTC 2120
 \*  issuer: CN=User,OU=User,O=Client,L=Rotterdam,ST=Zuid-Holland,C=NL
-> GET /mutual-tls-test HTTP/1\.1
-> Host: localhost:%s
-
 \* TLS connection using TLS \d+\.\d+ / \w+
 \* ALPN: h2 accepted
 \* Server certificate:
@@ -552,6 +549,9 @@ form received
 \*  subjectAltName: "localhost" matches cert's "localhost"
 \*  issuer: CN=localhost,OU=Cloud,O=Plifk,L=Carmel-by-the-Sea,ST=California,C=US
 \*  TLS certificate verify ok\.
+> GET /mutual-tls-test HTTP/1\.1
+> Host: localhost:%s
+
 < HTTP/2\.0 200 OK
 < Content-Length: 13
 < Content-Type: text/plain; charset=utf-8
@@ -740,10 +740,6 @@ Hello, world!
 Hello, world!
 -- TestOutgoingTLS --
 ^\* Request to %s
-> GET / HTTP/1\.1
-> Host: example\.com
-> User-Agent: Robot/0\.1 crawler@example\.com
-
 \* TLS connection using TLS \d+\.\d+ / \w+
 \* Server certificate:
 \*  subject: O=Acme Co
@@ -752,6 +748,10 @@ Hello, world!
 \*  subjectAltName: "example\.com" matches cert's "example\.com"
 \*  issuer: O=Acme Co
 \*  TLS certificate verify ok\.
+> GET / HTTP/1\.1
+> Host: example\.com
+> User-Agent: Robot/0\.1 crawler@example\.com
+
 < HTTP/1\.1 200 OK
 < Content-Length: 13
 < Content-Type: text/plain; charset=utf-8
@@ -771,10 +771,6 @@ Hello, world!
 * remote error: tls: %s
 -- TestOutgoingTLSIPSAN --
 ^\* Request to %s
-> GET / HTTP/1\.1
-> Host: 127\.0\.0\.1
-> User-Agent: Robot/0\.1 crawler@example\.com
-
 \* TLS connection using TLS \d+\.\d+ / \w+
 \* Server certificate:
 \*  subject: O=Acme Co
@@ -783,6 +779,10 @@ Hello, world!
 \*  subjectAltName: "127\.0\.0\.1" matches cert's IP address!
 \*  issuer: O=Acme Co
 \*  TLS certificate verify ok\.
+> GET / HTTP/1\.1
+> Host: 127\.0\.0\.1
+> User-Agent: Robot/0\.1 crawler@example\.com
+
 < HTTP/1\.1 200 OK
 < Content-Length: 13
 < Content-Type: text/plain; charset=utf-8
@@ -791,10 +791,6 @@ Hello, world!
 -- TestOutgoingTLSInsecureSkipVerify --
 ^\* Request to %s
 \* Skipping TLS verification: connection is susceptible to man-in-the-middle attacks\.
-> GET / HTTP/1\.1
-> Host: example\.com
-> User-Agent: Robot/0\.1 crawler@example\.com
-
 \* TLS connection using TLS \d+\.\d+ / \w+ \(insecure=true\)
 \* Server certificate:
 \*  subject: O=Acme Co
@@ -803,6 +799,10 @@ Hello, world!
 \*  subjectAltName: "example\.com" matches cert's "example\.com"
 \*  issuer: O=Acme Co
 \*  TLS certificate verify ok\.
+> GET / HTTP/1\.1
+> Host: example\.com
+> User-Agent: Robot/0\.1 crawler@example\.com
+
 < HTTP/1\.1 200 OK
 < Content-Length: 13
 < Content-Type: text/plain; charset=utf-8
