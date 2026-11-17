@@ -739,9 +739,7 @@ func (p *printer) format(s ...any) string {
 }
 
 func (p *printer) printHeaders(prefix rune, h http.Header) {
-	if !p.logger.SkipSanitize {
-		h = header.Sanitize(header.DefaultSanitizers, h)
-	}
+	h = p.sanitizeHeaders(h)
 
 	longest, sorted := sortHeaderKeys(h, p.logger.cloneSkipHeader())
 	for _, key := range sorted {
@@ -757,6 +755,63 @@ func (p *printer) printHeaders(prefix rune, h http.Header) {
 				p.format(color.FgYellow, v))
 		}
 	}
+}
+
+func (p *printer) sanitizeHeaders(h http.Header) http.Header {
+	if p.logger.SkipSanitize {
+		return h
+	}
+
+	sanitizedHeaders := p.logger.cloneSanitizeHeader()
+	customSanitizer := p.logger.getHeaderSanitizer()
+
+	redacted := http.Header{}
+	for k, values := range h {
+		canonicalKey := http.CanonicalHeaderKey(k)
+		redactedValues := make([]string, len(values))
+		for i, v := range values {
+			if _, ok := sanitizedHeaders[canonicalKey]; ok {
+				redactedValues[i] = DefaultRedactedValue
+				continue
+			}
+			if customSanitizer != nil {
+				if sanitizedVal, ok := p.safeHeaderSanitize(customSanitizer, k, v); ok {
+					redactedValues[i] = sanitizedVal
+					continue
+				}
+			}
+			if s, ok := header.DefaultSanitizers[canonicalKey]; ok {
+				redactedValues[i] = s(v)
+				continue
+			}
+			redactedValues[i] = v
+		}
+		redacted[k] = redactedValues
+	}
+	return redacted
+}
+
+func (p *printer) safeHeaderSanitize(f HeaderSanitizer, name, value string) (string, bool) {
+	var (
+		res      string
+		panicked bool
+	)
+	func() {
+		defer func() {
+			if e := recover(); e != nil {
+				panicked = true
+				p.printf("* panic while sanitizing header %s: %v\n", p.format(color.FgBlue, name), p.format(color.FgRed, e))
+			}
+		}()
+		res = f(name, value)
+	}()
+	if panicked {
+		return value, false
+	}
+	if res != value {
+		return res, true
+	}
+	return res, false
 }
 
 func sortHeaderKeys(h http.Header, skipped map[string]struct{}) (int, []string) {
